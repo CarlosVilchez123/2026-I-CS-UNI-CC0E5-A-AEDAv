@@ -1,15 +1,10 @@
-# PR — BinaryTree & BinaryTreeAVL
-
-**Curso:** CC0E5-A — Algoritmos y Estructura de Datos Avanzados  
-**Rama:** `21-BinaryTree`  
-**Autor:** JaocHatter  
-**Fecha:** 2026-05-18
+# PC3 — BinaryTree & BinaryTreeAVL
 
 ---
 
 ## Descripción
 
-Implementación completa de un árbol binario de búsqueda genérico (`BinaryTree<Trait>`) y su variante autobalanceada (`BinaryTreeAVL<Trait>`), con soporte para 6 tipos de iteradores DFS, concurrencia con `shared_mutex`, y persistencia mediante `operator<<` / `operator>>`.
+El siguente trabajo busca completar un árbol binario de búsqueda genérico (`BinaryTree<Trait>`) y su variante autobalanceada (`BinaryTreeAVL<Trait>`), con soporte para 6 tipos de iteradores DFS, concurrencia con `shared_mutex`, y persistencia mediante `operator<<` / `operator>>`.
 
 ---
 
@@ -17,7 +12,7 @@ Implementación completa de un árbol binario de búsqueda genérico (`BinaryTre
 
 | Archivo | Estado | Descripción |
 |---|---|---|
-| `containers/BinaryTree.h` | Modificado | Implementación completa del BST genérico con todos los iteradores |
+| `containers/BinaryTree.h` | Modificado | Implementación completa del BinaryTree genérico con todos los iteradores |
 | `containers/BinaryTreeAVL.h` | Nuevo | Árbol AVL heredando de `BinaryTree` con rotaciones automáticas |
 | `containers/traits.h` | Modificado | Agrega `std::less` / `std::greater` como comparadores por defecto |
 | `containers/general_iterator.h` | Modificado | Agrega `operator!=` necesario para range-based for |

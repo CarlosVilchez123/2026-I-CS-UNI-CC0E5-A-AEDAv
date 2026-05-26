@@ -1,7 +1,8 @@
-#include "containers/BinaryTreeDemo.h"
+#include "containers/heapDemo.h"
+#include "containers/hashTableDemo.h"
 
-void BinaryTreeDemo();
 int main(){
-    BinaryTreeDemo();
+    HeapDemo();
+    HashTableDemo();
     return 0;
 }
