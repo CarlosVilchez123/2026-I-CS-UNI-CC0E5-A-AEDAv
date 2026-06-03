@@ -39,8 +39,6 @@ public:
 };
 
 //  Traits de comparación
-//  MinHeapTrait → la raíz es el elemento mínimo (less<T>)
-//  MaxHeapTrait → la raíz es el elemento máximo (greater<T>)
 template<typename T>
 struct MinHeapTrait : public BaseTrait<HeapNode<T>, less<T>> {};
 
@@ -48,8 +46,6 @@ template<typename T>
 struct MaxHeapTrait : public BaseTrait<HeapNode<T>, greater<T>> {};
 
 //  heap_forward_iterator
-//  Iterador de acceso secuencial sobre el arreglo interno del Heap.
-//  Avanza incrementando el puntero al nodo actual (recorrido por nivel).
 template<typename Container>
 class heap_forward_iterator
     : public general_iterator<Container, heap_forward_iterator<Container>> {
@@ -62,15 +58,6 @@ public:
     MySelf operator++() { this->m_pNode++; return *this; }
 };
 
-//  implementacion del Heap<Trait>
-//  Heap binario genérico sobre un arreglo dinámico.
-//  El Trait define el tipo de nodo y el comparador, lo que permite usar
-//  la misma clase tanto para MinHeap como para MaxHeap.
-//
-//  Propiedades:
-//    - Inserción y extracción en O(log n)
-//    - Acceso al elemento prioritario (peek) en O(1)
-//    - Seguro para uso concurrente mediante shared_mutex
 template<typename Trait>
 class Heap {
 public:
@@ -83,13 +70,12 @@ public:
     friend forward_iterator;
 
 private:
-    Node*                m_data;      // arreglo dinámico de nodos
-    size_t               m_size;      // cantidad de elementos actuales
-    size_t               m_capacity;  // capacidad máxima del arreglo
-    Comp                 m_comp;      // comparador definido por el Trait
-    mutable shared_mutex m_mtx;       // mutex para concurrencia
+    Node*                m_data;      
+    size_t               m_size;      
+    size_t               m_capacity;  
+    Comp                 m_comp;      
+    mutable shared_mutex m_mtx;       
 
-    // Duplica la capacidad del arreglo cuando está lleno
     void resize() {
         m_capacity = (m_capacity < 10) ? m_capacity + 10 : m_capacity * 2;
         Node* fresh = new Node[m_capacity];
@@ -99,8 +85,7 @@ private:
         m_data = fresh;
     }
 
-    // Sube el nodo en la posición `index` hasta restaurar la propiedad heap
-    // Se usa después de insertar un nuevo elemento al final
+    // item de la PC
     void heapifyUp(size_t index) {
         while (index > 0) {
             size_t parent = (index - 1) / 2;
@@ -111,8 +96,7 @@ private:
         }
     }
 
-    // Baja el nodo en la posición `index` hasta restaurar la propiedad heap
-    // Se usa después de extraer la raíz y poner el último elemento al frente
+    //iteam de la PC
     void heapifyDown(size_t index) {
         while (true) {
             size_t best  = index;
@@ -135,7 +119,6 @@ public:
 
     virtual ~Heap() { delete[] m_data; }
 
-    // clona el arreglo completo con shared_lock para seguridad
     Heap(const Heap& other) {
         shared_lock lock(other.m_mtx);
         m_capacity = other.m_capacity;
@@ -146,7 +129,6 @@ public:
             m_data[i] = other.m_data[i];
     }
 
-    // transfiere ownership del arreglo sin copiar elementos
     Heap(Heap&& other) {
         unique_lock lock(other.m_mtx);
         m_data     = exchange(other.m_data,     nullptr);
@@ -157,7 +139,6 @@ public:
 
     // Operaciones principales
 
-    // Inserta un nuevo elemento manteniendo la propiedad heap
     void insert(value_type value, Ref ref = 0) {
         unique_lock lock(m_mtx);
         if (m_size == m_capacity) resize();
@@ -165,7 +146,7 @@ public:
         heapifyUp(m_size - 1);
     }
 
-    // Elimina la raíz y restaura la propiedad heap
+    // iteam de la PC
     void extract() {
         unique_lock lock(m_mtx);
         if (m_size == 0) throw out_of_range("Heap::extract — heap is empty");
@@ -174,7 +155,7 @@ public:
         if (m_size > 0) heapifyDown(0);
     }
 
-    // Devuelve el elemento prioritario sin eliminarlo
+    // item de la PC
     Node peek() const {
         shared_lock lock(m_mtx);
         if (m_size == 0) throw out_of_range("Heap::peek — heap is empty");
@@ -184,7 +165,7 @@ public:
     bool   isEmpty() const { shared_lock lock(m_mtx); return m_size == 0; }
     size_t size()    const { shared_lock lock(m_mtx); return m_size; }
 
-    // implementacion del toString
+    // Item de la PC
     string toString() const {
         shared_lock lock(m_mtx);
         ostringstream oss;
@@ -197,12 +178,12 @@ public:
         return oss.str();
     }
 
-    // Imprime el heap en cualquier flujo de salida
+    //item de la PC
     friend ostream& operator<<(ostream& os, const Heap& h) {
         return os << h.toString();
     }
 
-    // Carga el heap desde un flujo con formato
+    // Item de la PC
     friend istream& operator>>(istream& is, Heap& h) {
         char ch;
         if (!(is >> ch) || ch != '[') { is.setstate(ios::failbit); return is; }
@@ -219,9 +200,6 @@ public:
         return is;
     }
 
-    // Iteradores 
-
-    // Recorre el arreglo en orden de nivel
     forward_iterator begin() { return forward_iterator(this, m_data); }
     forward_iterator end()   { return forward_iterator(this, m_data + m_size); }
 };

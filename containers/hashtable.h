@@ -17,7 +17,7 @@ template<typename Key, typename Value>
 struct HashNode {
     Key       m_key;
     Value     m_value;
-    HashNode* m_next;   // siguiente nodo en el mismo bucket
+    HashNode* m_next;   
 
     HashNode(Key k, Value v) : m_key(k), m_value(v), m_next(nullptr) {}
 };
@@ -34,18 +34,16 @@ public:
 private:
     static constexpr size_t DEFAULT_CAPACITY = 16;
 
-    Node**               m_buckets;   // arreglo de punteros a listas enlazadas
-    size_t               m_capacity;  // numero de buckets
-    size_t               m_size;      // total de pares clave-valor almacenados
-    Hash                 m_hash;      // funcion hash
-    mutable shared_mutex m_mtx;       // mutex para lectura/escritura concurrente
+    Node**               m_buckets;   
+    size_t               m_capacity;  
+    size_t               m_size;      
+    Hash                 m_hash;      
+    mutable shared_mutex m_mtx;       
 
-    // Calcula el indice del bucket para una clave dada
     size_t bucket_idx(const Key& k) const {
         return m_hash(k) % m_capacity;
     }
 
-    // Libera todos los nodos de todos los buckets
     void internal_clear() {
         for (size_t i = 0; i < m_capacity; ++i) {
             Node* cur = m_buckets[i];
@@ -60,7 +58,6 @@ private:
     }
 
 public:
-    // Iterador forward
     class forward_iterator {
         const HashTable* m_table;
         size_t           m_bucket;
@@ -82,10 +79,8 @@ public:
                 advance_to_valid();
         }
 
-        // Devuelve par (clave, valor) por referencia
         pair_type operator*() const { return {m_node->m_key, m_node->m_value}; }
 
-        // Avanza al siguiente nodo, si el bucket se agota, busca el próximo no vacío
         forward_iterator& operator++() {
             m_node = m_node->m_next;
             if (!m_node) advance_to_valid();
@@ -113,6 +108,7 @@ public:
         delete[] m_buckets;
     }
 
+    // constructor copia
     HashTable(const HashTable& other) {
         shared_lock lock(other.m_mtx);
         m_capacity = other.m_capacity;
@@ -131,6 +127,7 @@ public:
         }
     }
 
+    // constructor move
     HashTable(HashTable&& other) {
         unique_lock lock(other.m_mtx);
         m_buckets  = exchange(other.m_buckets,  new Node*[1]{});
@@ -140,19 +137,17 @@ public:
     }
 
 
-    // Acceso/inserción por clave, se crea el par con Value{} si la clave no existe
+    // operator item de la PC
     Value& operator[](const Key& key) {
         unique_lock lock(m_mtx);
         size_t idx = bucket_idx(key);
         Node*  cur = m_buckets[idx];
 
-        // Busca la clave en el bucket, si la encuentra, devuelve su valor
         while (cur) {
             if (cur->m_key == key) return cur->m_value;
             cur = cur->m_next;
         }
 
-        // Se crea una nueva clave y inserta al frente del bucket (inserción O(1))
         Node* fresh    = new Node(key, Value{});
         fresh->m_next  = m_buckets[idx];
         m_buckets[idx] = fresh;
@@ -160,7 +155,6 @@ public:
         return fresh->m_value;
     }
 
-    // Busqueda de clave sin modificar la tabla — usa shared_lock
     bool contains(const Key& key) const {
         shared_lock lock(m_mtx);
         Node* cur = m_buckets[bucket_idx(key)];
@@ -171,7 +165,6 @@ public:
         return false;
     }
 
-    // Elimina el par con la clave dada; devuelve true si existía
     bool remove(const Key& key) {
         unique_lock lock(m_mtx);
         size_t  idx = bucket_idx(key);
@@ -210,10 +203,13 @@ public:
         return oss.str();
     }
 
+    // item de la PC
     friend ostream& operator<<(ostream& os, const HashTable& h) {
         return os << h.toString();
     }
 
+    
+    // item de la PC
     friend istream& operator>>(istream& is, HashTable& h) {
         char ch;
         if (!(is >> ch) || ch != '{') { is.setstate(ios::failbit); return is; }
