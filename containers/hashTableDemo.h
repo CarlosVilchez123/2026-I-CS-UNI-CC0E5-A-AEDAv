@@ -1,96 +1,37 @@
 #include <iostream>
+#include <string>
 #include <fstream>
-#include <thread>
-#include <vector>
-#include <mutex>
+#include "../types.h"
 #include "hashtable.h"
+
 using namespace std;
 
-void HashTableDemo() {
-    // operator[] inserta el par si la clave no existe, o actualiza si ya existe
-    cout << "\n=== HashTable Demo ===" << endl;
+void hashTableDemo() {
+    cout<<"=== PRUEBAS HASHTABLE ==="<<endl;
+    
+    HashTable<long, string> m(3); 
+    //operator[]
+    m[10] = "Diez";
+    m[25] = "Veinticinco";
+    m[10] = "DiezP"; 
+    m[3]  = "Tres";
 
-    HashTable<int, int> m;
-    m[5]  = 3;
-    m[10] = 7;
-    m[1]  = 42;
-    m[20] = 99;
-    m[5]  = 100;  // actualiza valor existente (no duplica la clave)
+    cout<<"m[10] = "<<m[10]<<endl;
 
-    cout << "Tabla: " << m << endl;
-    cout << "m[5]  = " << m[5]  << " (esperado 100)" << endl;
-    cout << "m[10] = " << m[10] << " (esperado 7)"   << endl;
-    cout << "size  = " << m.size() << " (esperado 4)" << endl;
+    //for (const auto& [key, value] : m)
+    cout<<"\nfor-range:"<<endl;
+    for (const auto& [key, value] : m) {
+        cout<<"  Key: "<<key<<" -> Value: "<<value<<endl;
+    }
 
-    // Iterador forward con structured bindings, recorre todos los pares
-    cout << "\n--- structured bindings ---" << endl;
-    for (const auto& [key, value] : m)
-        cout << key << " -> " << value << endl;
+    //operator<< y toString
+    cout<<"\noperator<< (toString):"<<endl;
+    cout<<m<<endl;
 
-    // contains() busca sin modificar la tabla
-    // remove() elimina el nodo del bucket correspondiente
-    cout << "\n--- contains / remove ---" << endl;
-    cout << "contains(10): " << boolalpha << m.contains(10) << endl;
-    m.remove(10);
-    cout << "contains(10) tras remove: " << m.contains(10) << endl;
-    cout << "size tras remove: " << m.size() << " (esperado 3)" << endl;
+    //copia y movimiento
+    HashTable<long, string> copia(m);
+    copia[99] = "Dato de Copia";
+    cout<<"\nTamano Original: "<<m.size()<<" | Tamano Copia: "<<copia.size()<<endl;
 
-    // operator<< serializa a formato {clave:valor,...}; operator>> reconstruye
-    cout << "\n=== I/O Demo ===" << endl;
-
-    HashTable<int, int> h1;
-    h1[1] = 11;
-    h1[2] = 22;
-    h1[3] = 33;
-
-    ofstream fout("HashTable.txt");
-    fout << h1;
-    fout.close();
-    cout << "Guardado: " << h1 << endl;
-
-    HashTable<int, int> h2;
-    ifstream fin("HashTable.txt");
-    fin >> h2;
-    fin.close();
-    cout << "Cargado:  " << h2 << endl;
-    cout << "h2[2] = " << h2[2] << " (esperado 22)" << endl;
-    cout << "\n=== Copy/Move Demo ===" << endl;
-
-    HashTable<int, int> h3;
-    h3[7] = 70; h3[8] = 80;
-
-    HashTable<int, int> h4(h3);          // copia profunda
-    cout << "Original: " << h3 << endl;
-    cout << "Copia:    " << h4 << endl;
-
-    HashTable<int, int> h5(move(h3));    // h3 queda con un bucket vacío
-    cout << "Movido:   " << h5 << endl;
-
-    cout << "\n=== HashTable<string, int> Demo ===" << endl;
-
-    HashTable<string, int> words;
-    words["hola"]  = 1;
-    words["mundo"] = 2;
-    words["aeda"]  = 3;
-    words["hola"] += 10;   // actualiza en lugar de duplicar
-
-    cout << "Tabla string: " << words << endl;
-    for (const auto& [k, v] : words)
-        cout << k << " -> " << v << endl;
-
-    cout << "\n=== Concurrency test (5 threads x 1000 inserts) ===" << endl;
-
-    HashTable<int, int> cH;
-    auto worker = [&cH](int start) {
-        for (int i = start; i < start + 1000; ++i)
-            cH[i] = i * 2;
-    };
-
-    vector<thread> threads;
-    for (int i = 0; i < 5; ++i) threads.emplace_back(worker, i * 1000);
-    for (auto& t : threads) t.join();
-
-    cout << "size=" << cH.size() << " (expected 5000) -> "
-         << (cH.size() == 5000 ? "EXITO" : "FALLO") << endl;
-    cout << "cH[999] = " << cH[999] << " (esperado 1998)" << endl;
+    cout<<"\nFIN PRUEBAS HASHTABLE"<<endl;
 }

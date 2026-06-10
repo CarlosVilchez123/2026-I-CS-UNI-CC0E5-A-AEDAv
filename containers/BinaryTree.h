@@ -1,409 +1,327 @@
 #ifndef __BINARYTREE_H__
 #define __BINARYTREE_H__
+
 #include <iostream>
-#include <cstddef>
-#include <string>
-#include <fstream>
-#include <thread>
-#include <stack>
-#include <string>
-#include <vector>
 #include <sstream>
-#include <mutex>
+#include <stdexcept>
+#include <tuple>
 #include <shared_mutex>
-#include <utility>
-#include <algorithm>
-#include "general_iterator.h"
+#include "stack.h"
+#include "vector.h"
+#include "../types.h"
 #include "traits.h"
-#include "util.h"
 using namespace std;
 
-// Definir la base CRTP 
-// (necesaria para que `m_pChild` tenga 
-// el tipo correcto al heredar en AVLNode)
-
-template<typename Derived, typename T>
-struct BinaryTreeNodeBase {
+template<typename T, typename DerivedNode = void>
+struct BinaryTreeNode {
     using value_type = T;
-    T        m_data;
-    Derived* m_pChild[2];
-    BinaryTreeNodeBase(T data) : m_data(data), m_pChild{nullptr, nullptr} {}
-    virtual ~BinaryTreeNodeBase() = default;
-    T& getDataRef()       { return m_data; }
-    T  getData()    const { return m_data; }
+    using Node = std::conditional_t<std::is_void_v<DerivedNode>,
+                                    BinaryTreeNode, DerivedNode>;
+    T     m_data;
+    Ref   m_ref;
+    Node *m_pChild[2];
+    BinaryTreeNode(T data, Ref ref)
+        : m_data(data), m_ref(ref), m_pChild{nullptr, nullptr} {}
 };
 
-template<typename T>
-struct BinaryTreeNode : BinaryTreeNodeBase<BinaryTreeNode<T>, T> {
-    BinaryTreeNode(T data) : BinaryTreeNodeBase<BinaryTreeNode<T>, T>(data) {}
+template<typename Node, typename value_type>
+class BTIteratorBase {
+protected:
+    Stack<Node*> m_nodes;
+    ptrdiff_t    m_index;
+public:
+    BTIteratorBase() : m_index(0) {}
+    BTIteratorBase(Stack<Node*> s, ptrdiff_t idx) : m_nodes(s), m_index(idx) {}
+    value_type& operator*()  const { return m_nodes[m_index]->m_data; }
+    Node*       getNode()    const { return m_nodes[m_index]; }
+    bool operator==(const BTIteratorBase& o) const { return m_index == o.m_index; }
+    bool operator!=(const BTIteratorBase& o) const { return m_index != o.m_index; }
 };
 
-// Utilizar:
-//    AscendingTrait<BinaryTreeNode<T>> o 
-//    DescendingTrait<BinaryTreeNode<T>>
+template<typename Node, typename value_type>
+class BTForwardIterator : public BTIteratorBase<Node, value_type> {
+public:
+    using BTIteratorBase<Node, value_type>::BTIteratorBase;
+    BTForwardIterator& operator++() { ++this->m_index; return *this; }
+};
 
-template<typename T> using AscendingBSTrait  = AscendingTrait<BinaryTreeNode<T>>;
-template<typename T> using DescendingBSTrait = DescendingTrait<BinaryTreeNode<T>>;
+template<typename Node, typename value_type>
+class BTBackwardIterator : public BTIteratorBase<Node, value_type> {
+public:
+    using BTIteratorBase<Node, value_type>::BTIteratorBase;
+    BTBackwardIterator& operator++() { --this->m_index; return *this; }
+};
 
-// Declaraciones de Iteradores
-template<typename C> class BTInorderForwardIterator;
-template<typename C> class BTInorderBackwardIterator;
-template<typename C> class BTPreorderForwardIterator;
-template<typename C> class BTPreorderBackwardIterator;
-template<typename C> class BTPostorderForwardIterator;
-template<typename C> class BTPostorderBackwardIterator;
+template<typename ForwardIt, typename BackwardIt>
+class TraversalView {
+    ForwardIt  m_begin;
+    ForwardIt  m_end;
+    BackwardIt m_rbegin;
+    BackwardIt m_rend;
+public:
+    TraversalView(ForwardIt b, ForwardIt e, BackwardIt rb, BackwardIt re)
+        : m_begin(b), m_end(e), m_rbegin(rb), m_rend(re) {}
+    ForwardIt  begin()  const { return m_begin;  }
+    ForwardIt  end()    const { return m_end;    }
+    BackwardIt rbegin() const { return m_rbegin; }
+    BackwardIt rend()   const { return m_rend;   }
 
-// funciones anticuadas eliminadas
+    template<typename Func, typename... Args>
+    void forEach(Func func, Args&&... args) {
+        for (auto it = begin(); it != end(); ++it)
+            func(*it, forward<Args>(args)...);
+    }
+
+    template<typename Func, typename... Args>
+    void rForEach(Func func, Args&&... args) {
+        for (auto it = rbegin(); it != rend(); ++it)
+            func(*it, forward<Args>(args)...);
+    }
+    template<typename Func, typename... Args>
+    void forEachNode(Func func, Args&&... args) {
+        for (auto it = begin(); it != end(); ++it)
+            func(*it.getNode(), forward<Args>(args)...);
+    }
+};
+
 template<typename Trait>
-class BinaryTree{
+class BinaryTree {
 public:
     using value_type = typename Trait::value_type;
     using Node       = typename Trait::Node;
-    using Comp    = typename Trait::Comp;
-    using MySelf     = BinaryTree<Trait>;
+    using Comp       = typename Trait::Comp;
+    using ForwardIt  = BTForwardIterator <Node, value_type>;
+    using BackwardIt = BTBackwardIterator<Node, value_type>;
+    using InorderView   = TraversalView<ForwardIt, BackwardIt>;
+    using PreorderView  = TraversalView<ForwardIt, BackwardIt>;
+    using PostorderView = TraversalView<ForwardIt, BackwardIt>;
 
-    using forward_iterator = BTInorderForwardIterator<MySelf>;
-    using backward_iterator = BTInorderBackwardIterator<MySelf>;
-    using preorder_forward_iterator = BTPreorderForwardIterator<MySelf>;
-    using preorder_backward_iterator = BTPreorderBackwardIterator<MySelf>;
-    using postorder_forward_iterator = BTPostorderForwardIterator<MySelf>;
-    using postorder_backward_iterator = BTPostorderBackwardIterator<MySelf>;
+protected:
+    Node                *m_pRoot;
+    Comp                 m_comp;
+    mutable shared_mutex m_mtx;
 
-    friend forward_iterator;
-    friend backward_iterator;
-    friend preorder_forward_iterator;
-    friend preorder_backward_iterator;
-    friend postorder_forward_iterator;
-    friend postorder_backward_iterator;
-
-    protected:
-        Node    *m_pRoot;
-        Comp  m_comp;
-        size_t m_size;
-        mutable shared_mutex m_mtx;
-    public:
-        BinaryTree() : m_pRoot(nullptr), m_size(0) {}
-
-        // constructor copia
-        BinaryTree(const BinaryTree& other) : m_pRoot(nullptr), m_size(0) {
-            shared_lock lock(other.m_mtx);
-            m_pRoot = internal_copy(other.m_pRoot);
-            m_size  = other.m_size;
-        }
-
-        // move constructor
-        BinaryTree(BinaryTree&& other) : m_pRoot(nullptr), m_size(0) {
-            unique_lock lock(other.m_mtx);
-            m_pRoot = exchange(other.m_pRoot, nullptr);
-            m_size  = exchange(other.m_size, 0);
-        }
-
-        ~BinaryTree() { internal_destroy(m_pRoot); }
-    private:
-        void internal_destroy(Node* node) {
-            if (!node) return;
-            internal_destroy(node->m_pChild[0]);
-            internal_destroy(node->m_pChild[1]);
-            delete node;
-        }
-
-        Node* internal_copy(Node* src) {
-            if (!src) return nullptr;
-            Node* n = new Node(src->m_data);
-            n->m_pChild[0] = internal_copy(src->m_pChild[0]);
-            n->m_pChild[1] = internal_copy(src->m_pChild[1]);
-            return n;
-        }
-
-        void inorder_str(Node* node, ostringstream& oss, bool& first) const {
-            if (!node) return;
-            inorder_str(node->m_pChild[0], oss, first);
-            if (!first) oss << ",";
-            oss << node->m_data;
-            first = false;
-            inorder_str(node->m_pChild[1], oss, first);
-        }
-
-        size_t internal_height(Node* node) const {
-            if (!node) return 0;
-            return 1 + max(internal_height(node->m_pChild[0]),
-                        internal_height(node->m_pChild[1]));
-        }
-
-        Node* internal_remove(Node* node, value_type val) {
-            if (!node) return nullptr;
-            bool eq = !m_comp(node->m_data, val) && !m_comp(val, node->m_data);
-            if (eq) {
-                if (!node->m_pChild[0] || !node->m_pChild[1]) {
-                    Node* child = node->m_pChild[0] ? node->m_pChild[0] : node->m_pChild[1];
-                    delete node; --m_size; return child;
-                }
-                Node* succ = node->m_pChild[1];
-                while (succ->m_pChild[0]) succ = succ->m_pChild[0];
-                node->m_data = succ->m_data;
-                node->m_pChild[1] = internal_remove(node->m_pChild[1], succ->m_data);
-                return node;
-            }
-            auto branch = !m_comp(node->m_data, val);
-            node->m_pChild[branch] = internal_remove(node->m_pChild[branch], val);
-            return node;
-        }
-
-    protected:
-        virtual void internal_insert(Node*& pNode, value_type data) {
-            if (!pNode) { pNode = new Node(data); ++m_size; return; }
-            auto branch = !m_comp(pNode->m_data, data);
-            internal_insert(pNode->m_pChild[branch], data);
-        }
-
-    public:
-        virtual void insert(value_type data) {
-            unique_lock lock(m_mtx);
-            internal_insert(m_pRoot, data);
-        }
-        size_t size() const {
-            shared_lock lock(m_mtx);
-            return m_size;
-        }
-
-        size_t height() const {
-            shared_lock lock(m_mtx);
-            return internal_height(m_pRoot);
-        }
-
-        int balance_factor(Node* node) const {
-            if (!node) return 0;
-            return (int)internal_height(node->m_pChild[0])
-                - (int)internal_height(node->m_pChild[1]);
-        }
-
-        bool contains(value_type val) const {
-            shared_lock lock(m_mtx);
-            Node* cur = m_pRoot;
-            while (cur) {
-                if (!m_comp(cur->m_data, val) && !m_comp(val, cur->m_data)) return true;
-                cur = cur->m_pChild[!m_comp(cur->m_data, val)];
-            }
-            return false;
-        }
-        void remove(value_type val) {
-            unique_lock lock(m_mtx);
-            m_pRoot = internal_remove(m_pRoot, val);
-        }
-        
-        string ToString() const {
-            shared_lock lock(m_mtx);
-            ostringstream oss;
-            bool first = true;
-            oss << "[";
-            inorder_str(m_pRoot, oss, first);
-            oss << "]";
-            return oss.str();
-        }
-
-        friend ostream& operator<<(ostream& os, const BinaryTree& t) {
-            os << t.ToString();
-            return os;
-        }
-
-        friend istream& operator>>(istream& is, BinaryTree& t) {
-            char ch;
-            if (!(is >> ch) || ch != '[') { is.setstate(ios::failbit); return is; }
-            value_type val;
-            while (is >> ch && ch != ']') {
-                if (ch != ',') is.putback(ch);
-                if (is >> val) t.insert(val);
-            }
-            return is;
-        }
-
-        forward_iterator begin() { return forward_iterator(this, m_pRoot); }
-        forward_iterator end()   { return forward_iterator(this, nullptr); }
-        backward_iterator rbegin() { return backward_iterator(this, m_pRoot); }
-        backward_iterator rend()   { return backward_iterator(this, nullptr); }
-        preorder_forward_iterator preorder_begin() { return preorder_forward_iterator(this, m_pRoot); }
-        preorder_forward_iterator preorder_end()   { return preorder_forward_iterator(this, nullptr); }
-        preorder_backward_iterator preorder_rbegin() { return preorder_backward_iterator(this, m_pRoot); }
-        preorder_backward_iterator preorder_rend()   { return preorder_backward_iterator(this, nullptr); }
-        postorder_forward_iterator postorder_begin() { return postorder_forward_iterator(this, m_pRoot); }
-        postorder_forward_iterator postorder_end()   { return postorder_forward_iterator(this, nullptr); }
-        postorder_backward_iterator postorder_rbegin() { return postorder_backward_iterator(this, m_pRoot); }
-        postorder_backward_iterator postorder_rend()   { return postorder_backward_iterator(this, nullptr); }
-
-        template<typename Func, typename... Args>
-        void ForEach(Func func, Args&&... args) {
-            unique_lock<shared_mutex> lock(m_mtx);
-            if (m_size == 0) return;
-            ::ForEach(this->begin(), this->end(), func, std::forward<Args>(args)...);;
-        }
-};
-
-// inorder forward
-template<typename Container>
-class BTInorderForwardIterator
-    : public general_iterator<Container, BTInorderForwardIterator<Container>> {
-public:
-    using MySelf = BTInorderForwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    stack<Node*> m_stack;
-    void push_left(Node* n) { while (n) { m_stack.push(n); n = n->m_pChild[0]; } }
-    void advance() {
-        if (m_stack.empty()) { this->m_pNode = nullptr; return; }
-        Node* n = m_stack.top(); m_stack.pop();
-        this->m_pNode = n;
-        push_left(n->m_pChild[1]);
+    virtual void internal_insert(Node* &pNode, const value_type &data, Ref ref) {
+        if (!pNode) { pNode = new Node(data, ref); return; }
+        auto branch = !m_comp(data, pNode->m_data); 
+        internal_insert(pNode->m_pChild[branch], data, ref);
     }
-public:
-    BTInorderForwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr) { push_left(root); advance(); }
-    BTInorderForwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr) {}
-    MySelf operator++() { advance(); return *this; }
-};
 
-//inorder backward
-template<typename Container>
-class BTInorderBackwardIterator
-    : public general_iterator<Container, BTInorderBackwardIterator<Container>> {
-public:
-    using MySelf = BTInorderBackwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    stack<Node*> m_stack;
-    void push_right(Node* n) { while (n) { m_stack.push(n); n = n->m_pChild[1]; } }
-    void advance() {
-        if (m_stack.empty()) { this->m_pNode = nullptr; return; }
-        Node* n = m_stack.top(); m_stack.pop();
-        this->m_pNode = n;
-        push_right(n->m_pChild[0]);
+    virtual void internal_clear(Node* pNode) {
+        if (!pNode) return;
+        internal_clear(pNode->m_pChild[0]);
+        internal_clear(pNode->m_pChild[1]);
+        delete pNode;
     }
-public:
-    BTInorderBackwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr) { push_right(root); advance(); }
-    BTInorderBackwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr) {}
-    MySelf operator++() { advance(); return *this; }
-};
 
-template<typename Container>
-class BTPreorderForwardIterator
-    : public general_iterator<Container, BTPreorderForwardIterator<Container>> {
-public:
-    using MySelf = BTPreorderForwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    stack<Node*> m_stack;
-    void advance() {
-        if (m_stack.empty()) { this->m_pNode = nullptr; return; }
-        Node* n = m_stack.top(); m_stack.pop();
-        this->m_pNode = n;
-        if (n->m_pChild[1]) m_stack.push(n->m_pChild[1]);
-        if (n->m_pChild[0]) m_stack.push(n->m_pChild[0]);
+    virtual Node* internal_copy(Node* pNode) {
+        if (!pNode) return nullptr;
+        Node* n = new Node(pNode->m_data, pNode->m_ref);
+        n->m_pChild[0] = internal_copy(pNode->m_pChild[0]);
+        n->m_pChild[1] = internal_copy(pNode->m_pChild[1]);
+        return n;
     }
-public:
-    BTPreorderForwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr) { if (root) m_stack.push(root); advance(); }
-    BTPreorderForwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr) {}
-    MySelf operator++() { advance(); return *this; }
-};
 
-template<typename Container>
-class BTPreorderBackwardIterator
-    : public general_iterator<Container, BTPreorderBackwardIterator<Container>> {
-public:
-    using MySelf = BTPreorderBackwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    vector<Node*> m_nodes;
-    int           m_idx;
-    void collect(Node* n) {
+    virtual Node* internal_search(Node* pNode, const value_type& data) const {
+        if (!pNode) return nullptr;
+        if (!m_comp(data, pNode->m_data) && !m_comp(pNode->m_data, data))
+            return pNode;
+        auto branch = !m_comp(data, pNode->m_data);
+        return internal_search(pNode->m_pChild[branch], data);
+    }
+
+    virtual size_t internal_size(Node* n) const {
+        if (!n) return 0;
+        return 1 + internal_size(n->m_pChild[0]) + internal_size(n->m_pChild[1]);
+    }
+
+    void fill_inorder(Node* n, Stack<Node*>& s) const {
         if (!n) return;
-        m_nodes.push_back(n);
-        collect(n->m_pChild[0]);
-        collect(n->m_pChild[1]);
+        fill_inorder(n->m_pChild[0], s);
+        s.push(n);
+        fill_inorder(n->m_pChild[1], s);
     }
+    void fill_preorder(Node* n, Stack<Node*>& s) const {
+        if (!n) return;
+        s.push(n);
+        fill_preorder(n->m_pChild[0], s);
+        fill_preorder(n->m_pChild[1], s);
+    }
+    void fill_postorder(Node* n, Stack<Node*>& s) const {
+        if (!n) return;
+        fill_postorder(n->m_pChild[0], s);
+        fill_postorder(n->m_pChild[1], s);
+        s.push(n);
+    }
+
+    TraversalView<ForwardIt,BackwardIt> make_view(Stack<Node*> s) const {
+        ptrdiff_t last = (ptrdiff_t)s.size() - 1;
+        ForwardIt  b(s, 0),    e(s, (ptrdiff_t)s.size());
+        BackwardIt rb(s, last), re(s, -1);
+        return {b, e, rb, re};
+    }
+
+    string traversalToString(Stack<Node*>& s) const {
+        ostringstream oss;
+        oss << "[";
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (i) oss << ",";
+            oss << "(" << s[i]->m_data << "," << s[i]->m_ref << ")";
+        }
+        oss << "]";
+        return oss.str();
+    }
+
 public:
-    BTPreorderBackwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr), m_idx(-1) {
-        collect(root);
-        m_idx = (int)m_nodes.size() - 1;
-        this->m_pNode = (m_idx >= 0) ? m_nodes[m_idx] : nullptr;
+    BinaryTree() : m_pRoot(nullptr) {}
+
+    BinaryTree(const BinaryTree& other) : m_pRoot(nullptr) {
+        shared_lock<shared_mutex> lock(other.m_mtx);
+        m_pRoot = internal_copy(other.m_pRoot);
     }
-    BTPreorderBackwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr), m_idx(-1) {}
-    MySelf operator++() {
-        --m_idx;
-        this->m_pNode = (m_idx >= 0) ? m_nodes[m_idx] : nullptr;
+
+    BinaryTree(BinaryTree&& other) : m_pRoot(nullptr) {
+        unique_lock<shared_mutex> lock(other.m_mtx);
+        m_pRoot       = other.m_pRoot;
+        other.m_pRoot = nullptr;
+    }
+
+    BinaryTree& operator=(const BinaryTree& other) {
+        if (this != &other) {
+            clear();
+            shared_lock<shared_mutex> lock(other.m_mtx);
+            m_pRoot = internal_copy(other.m_pRoot);
+        }
         return *this;
     }
-};
 
-template<typename Container>
-class BTPostorderForwardIterator
-    : public general_iterator<Container, BTPostorderForwardIterator<Container>> {
-public:
-    using MySelf = BTPostorderForwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    stack<Node*> m_stack;
-    void build(Node* root) {
-        if (!root) return;
-        stack<Node*> s1;
-        s1.push(root);
-        while (!s1.empty()) {
-            Node* n = s1.top(); s1.pop();
-            m_stack.push(n);
-            if (n->m_pChild[0]) s1.push(n->m_pChild[0]);
-            if (n->m_pChild[1]) s1.push(n->m_pChild[1]);
+    BinaryTree& operator=(BinaryTree&& other) {
+        if (this != &other) {
+            clear();
+            unique_lock<shared_mutex> lock(other.m_mtx);
+            m_pRoot       = other.m_pRoot;
+            other.m_pRoot = nullptr;
+        }
+        return *this;
+    }
+
+    virtual ~BinaryTree() { clear(); }
+
+    void clear() {
+        unique_lock<shared_mutex> lock(m_mtx);
+        internal_clear(m_pRoot);
+        m_pRoot = nullptr;
+    }
+
+    void insert(const value_type& data, Ref ref) {
+        unique_lock<shared_mutex> lock(m_mtx);
+        internal_insert(m_pRoot, data, ref);
+    }
+
+    tuple<value_type, Ref> search(const value_type& data) const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        Node* found = internal_search(m_pRoot, data);
+        if (!found) throw runtime_error("elemento no encontrado");
+        return make_tuple(found->m_data, found->m_ref);
+    }
+
+    size_t size() const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        return internal_size(m_pRoot);
+    }
+    InorderView inorder() const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        Stack<Node*> s; fill_inorder(m_pRoot, s);
+        return make_view(s);
+    }
+    PreorderView preorder() const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        Stack<Node*> s; fill_preorder(m_pRoot, s);
+        return make_view(s);
+    }
+    PostorderView postorder() const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        Stack<Node*> s; fill_postorder(m_pRoot, s);
+        return make_view(s);
+    }
+    ForwardIt begin() const { return inorder().begin(); }
+    ForwardIt end()   const { return inorder().end();   }
+
+    string toString() const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        Stack<Node*> s;
+        string result;
+
+        fill_inorder(m_pRoot, s);
+        result += "Inorder:   " + traversalToString(s) + "\n";
+        while (!s.empty()) s.pop();
+
+        fill_preorder(m_pRoot, s);
+        result += "Preorder:  " + traversalToString(s) + "\n";
+        while (!s.empty()) s.pop();
+
+        fill_postorder(m_pRoot, s);
+        result += "Postorder: " + traversalToString(s);
+
+        return result;
+    }
+
+    void printTree(ostream& os = cout) const {
+        shared_lock<shared_mutex> lock(m_mtx);
+        if (!m_pRoot) { os << "  (arbol vacio)" << endl; return; }
+
+        Vector<Node*> queue(64);
+        size_t front = 0;
+        queue.push_back(m_pRoot, 0);
+
+        while (front < queue.size()) {
+            size_t level_size = queue.size() - front;
+            bool   all_null   = true;
+
+            for (size_t i = 0; i < level_size; ++i) {
+                Node* n = queue[front + i];
+                if (n) { all_null = false; break; }
+            }
+            if (all_null) break;
+
+            os << "  ";
+            for (size_t i = 0; i < level_size; ++i) {
+                Node* n = queue[front++];
+                if (n) {
+                    os << n->m_data;
+                    queue.push_back(n->m_pChild[0], 0);
+                    queue.push_back(n->m_pChild[1], 0);
+                } else {
+                    os << "_";
+                    queue.push_back(nullptr, 0);
+                    queue.push_back(nullptr, 0);
+                }
+                os << " ";
+            }
+            os << endl;
         }
     }
-    void advance() {
-        if (m_stack.empty()) { this->m_pNode = nullptr; return; }
-        this->m_pNode = m_stack.top(); m_stack.pop();
+
+
+    friend ostream& operator<<(ostream& os, const BinaryTree& tree) {
+        shared_lock<shared_mutex> lock(tree.m_mtx);
+        Stack<Node*> s;
+        tree.fill_inorder(tree.m_pRoot, s);
+        os << tree.traversalToString(s);
+        return os;
     }
-public:
-    BTPostorderForwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr) { build(root); advance(); }
-    BTPostorderForwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr) {}
-    MySelf operator++() { advance(); return *this; }
+
+    friend istream& operator>>(istream& is, BinaryTree& tree) {
+        char ch;
+        if (!(is >> ch) || ch != '[') { is.clear(ios_base::failbit); return is; }
+        value_type val; Ref ref; char comma, paren;
+        while (is >> ch && ch != ']')
+            if (ch == '(')
+                if (is >> val >> comma >> ref >> paren)
+                    if (comma == ',' && paren == ')')
+                        tree.insert(val, ref);
+        return is;
+    }
 };
 
-template<typename Container>
-class BTPostorderBackwardIterator
-    : public general_iterator<Container, BTPostorderBackwardIterator<Container>> {
-public:
-    using MySelf = BTPostorderBackwardIterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Node   = typename Container::Node;
-    using Parent::Parent;
-private:
-    stack<Node*> m_stack;
-    void advance() {
-        if (m_stack.empty()) { this->m_pNode = nullptr; return; }
-        Node* n = m_stack.top(); m_stack.pop();
-        this->m_pNode = n;
-        if (n->m_pChild[0]) m_stack.push(n->m_pChild[0]);
-        if (n->m_pChild[1]) m_stack.push(n->m_pChild[1]);
-    }
-public:
-    BTPostorderBackwardIterator(Container* c, Node* root)
-        : Parent(c, nullptr) { if (root) m_stack.push(root); advance(); }
-    BTPostorderBackwardIterator(Container* c, nullptr_t)
-        : Parent(c, nullptr) {}
-    MySelf operator++() { advance(); return *this; }
-};
-
-#endif // __BINARYTREE_H__ 
+#endif // __BINARYTREE_H__

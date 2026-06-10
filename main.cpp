@@ -1,8 +1,10 @@
 #include "containers/heapDemo.h"
 #include "containers/hashTableDemo.h"
 
+void HeapDemo();
+void hashTableDemo();
 int main(){
     HeapDemo();
-    HashTableDemo();
+    void hashTableDemo();
     return 0;
 }

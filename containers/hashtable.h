@@ -5,225 +5,317 @@
 #include <sstream>
 #include <stdexcept>
 #include <functional>
-#include <utility>
-#include <mutex>
 #include <shared_mutex>
-#include <cstddef>
-#include <string>
 #include "../types.h"
+#include "avl.h"
 using namespace std;
 
-template<typename Key, typename Value>
-struct HashNode {
-    Key       m_key;
-    Value     m_value;
-    HashNode* m_next;   
 
-    HashNode(Key k, Value v) : m_key(k), m_value(v), m_next(nullptr) {}
+template<typename Key, typename Value>
+struct HashNode : BinaryTreeNode<Key, HashNode<Key, Value>> {
+    using value_type = Key;
+
+    Value m_value;
+
+    HashNode()
+        : BinaryTreeNode<Key, HashNode<Key, Value>>(Key{}, Ref{}),
+          m_value(Value{}) {}
+
+    HashNode(Key key, Ref ref)
+        : BinaryTreeNode<Key, HashNode<Key, Value>>(key, ref),
+          m_value(Value{}) {}
+
+    HashNode(Key key, Value value, Ref ref = Ref{})
+        : BinaryTreeNode<Key, HashNode<Key, Value>>(key, ref),
+          m_value(value) {}
+
+    friend ostream& operator<<(ostream& os, const HashNode& n) {
+        return os << n.m_data << ":" << n.m_value;
+    }
 };
 
-template<typename Key, typename Value, typename Hash = hash<Key>>
+template<typename Key, typename Value>
+class HashBucket : public BinaryTree<AscendingTrait<HashNode<Key, Value>>> {
+public:
+    using Node = HashNode<Key, Value>;
+
+    HashBucket()
+        : BinaryTree<AscendingTrait<HashNode<Key, Value>>>() {}
+
+    HashBucket(const HashBucket& other)
+        : BinaryTree<AscendingTrait<HashNode<Key, Value>>>() {
+        shared_lock<shared_mutex> lock(other.m_mtx);
+        this->m_pRoot = internal_copy(static_cast<Node*>(other.m_pRoot));
+    }
+
+    HashBucket& operator=(const HashBucket& other) {
+        if (this != &other) {
+            this->clear();
+            shared_lock<shared_mutex> lock(other.m_mtx);
+            this->m_pRoot = internal_copy(static_cast<Node*>(other.m_pRoot));
+        }
+        return *this;
+    }
+
+protected:
+    Node* internal_copy(Node* pNode) override {
+        if (!pNode) return nullptr;
+        auto* n        = new Node(pNode->m_data, pNode->m_value, pNode->m_ref);
+        n->m_pChild[0] = internal_copy(pNode->m_pChild[0]);
+        n->m_pChild[1] = internal_copy(pNode->m_pChild[1]);
+        return n;
+    }
+
+public:
+    // inserta o actualiza el valor de una clave existente
+    void insertKV(const Key& key, const Value& value, Ref ref = Ref{}) {
+        auto* found = findNode(key);
+        if (found) {
+            found->m_value = value;
+            return;
+        }
+        this->insert(key, ref);
+        found = findNode(key);
+        if (found) found->m_value = value;
+    }
+
+    // busca un nodo por clave recorriendo el inorder
+    Node* findNode(const Key& key) const {
+        Node* result = nullptr;
+        const_cast<HashBucket*>(this)->inorder().forEachNode([&](Node& n) {
+            if (n.m_data == key) result = &n;
+        });
+        return result;
+    }
+};
+
+template<typename Key, typename Value>
+struct KVPair {
+    const Key& key;
+    Value&     value;
+};
+
+namespace std {
+    template<typename Key, typename Value>
+    struct tuple_size<KVPair<Key, Value>>
+        : integral_constant<size_t, 2> {};
+
+    template<typename Key, typename Value>
+    struct tuple_element<0, KVPair<Key, Value>> { using type = const Key; };
+
+    template<typename Key, typename Value>
+    struct tuple_element<1, KVPair<Key, Value>> { using type = Value; };
+}
+
+template<size_t I, typename Key, typename Value>
+decltype(auto) get(KVPair<Key, Value>& p) {
+    if constexpr (I == 0) return p.key; else return p.value;
+}
+
+template<size_t I, typename Key, typename Value>
+decltype(auto) get(const KVPair<Key, Value>& p) {
+    if constexpr (I == 0) return p.key; else return p.value;
+}
+
+template<typename Key, typename Value>
 class HashTable {
 public:
-    using key_type   = Key;
-    using value_type = Value;
-    using Node       = HashNode<Key, Value>;
-    using MySelf     = HashTable<Key, Value, Hash>;
-    using pair_type  = pair<const Key&, Value&>;
+    using Node        = HashNode<Key, Value>;
+    using Bucket      = HashBucket<Key, Value>;
+    using MySelf      = HashTable<Key, Value>;
+    using key_type    = Key;
+    using mapped_type = Value;
 
 private:
-    static constexpr size_t DEFAULT_CAPACITY = 16;
+    static constexpr size_t kDefaultCapacity = 17;
 
-    Node**               m_buckets;   
-    size_t               m_capacity;  
-    size_t               m_size;      
-    Hash                 m_hash;      
-    mutable shared_mutex m_mtx;       
+    Bucket*              m_buckets;
+    size_t               m_capacity;
+    size_t               m_size;
+    mutable shared_mutex m_mtx;
 
-    size_t bucket_idx(const Key& k) const {
-        return m_hash(k) % m_capacity;
-    }
-
-    void internal_clear() {
-        for (size_t i = 0; i < m_capacity; ++i) {
-            Node* cur = m_buckets[i];
-            while (cur) {
-                Node* nxt = cur->m_next;
-                delete cur;
-                cur = nxt;
-            }
-            m_buckets[i] = nullptr;
-        }
-        m_size = 0;
+    size_t bucket_index(const Key& key) const {
+        return std::hash<Key>{}(key) % m_capacity;
     }
 
 public:
-    class forward_iterator {
-        const HashTable* m_table;
-        size_t           m_bucket;
-        Node*            m_node;
+    // avanza de indorde sobre el AVL
+    struct Iterator {
+        HashTable* m_table;
+        size_t     m_bucket;
+        size_t     m_pos;
 
-        // Avanza hasta el proximo bucket no vacío
-        void advance_to_valid() {
-            while (m_bucket < m_table->m_capacity && !m_node) {
-                ++m_bucket;
-                if (m_bucket < m_table->m_capacity)
-                    m_node = m_table->m_buckets[m_bucket];
+        KVPair<Key, Value> operator*() const {
+            auto view = m_table->m_buckets[m_bucket].inorder();
+            auto it   = view.begin();
+            for (size_t i = 0; i < m_pos; ++i) ++it;
+            auto* n = it.getNode();
+            return {n->m_data, n->m_value};
+        }
+
+        Iterator& operator++() {
+            auto bsize = m_table->m_buckets[m_bucket].size();
+            if (m_pos + 1 < bsize) {
+                ++m_pos;
+                return *this;
             }
-        }
-
-    public:
-        forward_iterator(const HashTable* t, size_t b, Node* n)
-            : m_table(t), m_bucket(b), m_node(n) {
-            if (!m_node && m_bucket < m_table->m_capacity)
-                advance_to_valid();
-        }
-
-        pair_type operator*() const { return {m_node->m_key, m_node->m_value}; }
-
-        forward_iterator& operator++() {
-            m_node = m_node->m_next;
-            if (!m_node) advance_to_valid();
+            ++m_bucket;
+            while (m_bucket < m_table->m_capacity) {
+                if (m_table->m_buckets[m_bucket].size() > 0) {
+                    m_pos = 0;
+                    return *this;
+                }
+                ++m_bucket;
+            }
+            m_pos = 0;
             return *this;
         }
 
-        bool operator==(const forward_iterator& o) const {
-            return m_bucket == o.m_bucket && m_node == o.m_node;
+        bool operator==(const Iterator& o) const {
+            return m_bucket == o.m_bucket && m_pos == o.m_pos;
         }
-        bool operator!=(const forward_iterator& o) const { return !(*this == o); }
+        bool operator!=(const Iterator& o) const { return !(*this == o); }
     };
 
-    forward_iterator begin() const {
-        return forward_iterator(this, 0, m_capacity ? m_buckets[0] : nullptr);
-    }
-    forward_iterator end() const {
-        return forward_iterator(this, m_capacity, nullptr);
+    Iterator begin() {
+        for (size_t i = 0; i < m_capacity; ++i)
+            if (m_buckets[i].size() > 0)
+                return Iterator{this, i, 0};
+        return end();
     }
 
-    explicit HashTable(size_t capacity = DEFAULT_CAPACITY)
-        : m_buckets(new Node*[capacity]{}), m_capacity(capacity), m_size(0), m_hash() {}
+    Iterator end() { return Iterator{this, m_capacity, 0}; }
 
-    virtual ~HashTable() {
-        internal_clear();
-        delete[] m_buckets;
-    }
+
+    explicit HashTable(size_t capacity = kDefaultCapacity)
+        : m_buckets(new Bucket[capacity]),
+          m_capacity(capacity),
+          m_size(0) {}
+
 
     // constructor copia
-    HashTable(const HashTable& other) {
-        shared_lock lock(other.m_mtx);
+    HashTable(const HashTable& other)
+        : m_buckets(nullptr), m_capacity(0), m_size(0) {
+        shared_lock<shared_mutex> lock(other.m_mtx);
         m_capacity = other.m_capacity;
-        m_size     = 0;
-        m_hash     = other.m_hash;
-        m_buckets  = new Node*[m_capacity]{};
-        for (size_t i = 0; i < m_capacity; ++i) {
-            Node*  src = other.m_buckets[i];
-            Node** dst = &m_buckets[i];
-            while (src) {
-                *dst = new Node(src->m_key, src->m_value);
-                dst  = &(*dst)->m_next;
-                src  = src->m_next;
-                ++m_size;
-            }
-        }
+        m_size     = other.m_size;
+        m_buckets  = new Bucket[m_capacity];
+        for (size_t i = 0; i < m_capacity; ++i)
+            m_buckets[i] = other.m_buckets[i];
     }
 
-    // constructor move
-    HashTable(HashTable&& other) {
-        unique_lock lock(other.m_mtx);
-        m_buckets  = exchange(other.m_buckets,  new Node*[1]{});
-        m_capacity = exchange(other.m_capacity, 1);
+    //constructor move
+    HashTable(HashTable&& other)
+        : m_buckets(nullptr), m_capacity(0), m_size(0) {
+        unique_lock<shared_mutex> lock(other.m_mtx);
+        m_capacity = exchange(other.m_capacity, 0);
         m_size     = exchange(other.m_size,     0);
-        m_hash     = move(other.m_hash);
+        m_buckets  = exchange(other.m_buckets,  nullptr);
     }
 
+    HashTable& operator=(const HashTable& other) {
+        if (this == &other) return *this;
+        unique_lock<shared_mutex> lock(m_mtx);
+        shared_lock<shared_mutex> olock(other.m_mtx);
+        delete[] m_buckets;
+        m_capacity = other.m_capacity;
+        m_size     = other.m_size;
+        m_buckets  = new Bucket[m_capacity];
+        for (size_t i = 0; i < m_capacity; ++i)
+            m_buckets[i] = other.m_buckets[i];
+        return *this;
+    }
 
-    // operator item de la PC
+    HashTable& operator=(HashTable&& other) {
+        if (this == &other) return *this;
+        unique_lock<shared_mutex> lock(m_mtx);
+        unique_lock<shared_mutex> olock(other.m_mtx);
+        delete[] m_buckets;
+        m_capacity = exchange(other.m_capacity, 0);
+        m_size     = exchange(other.m_size,     0);
+        m_buckets  = exchange(other.m_buckets,  nullptr);
+        return *this;
+    }
+
+    virtual ~HashTable() { delete[] m_buckets; }
+
+    void insert(const Key& key, const Value& value, Ref ref = Ref{}) {
+        unique_lock<shared_mutex> lock(m_mtx);
+        auto idx = bucket_index(key);
+        if (!m_buckets[idx].findNode(key)) ++m_size;
+        m_buckets[idx].insertKV(key, value, ref);
+    }
+
+    // operator[]
     Value& operator[](const Key& key) {
-        unique_lock lock(m_mtx);
-        size_t idx = bucket_idx(key);
-        Node*  cur = m_buckets[idx];
-
-        while (cur) {
-            if (cur->m_key == key) return cur->m_value;
-            cur = cur->m_next;
-        }
-
-        Node* fresh    = new Node(key, Value{});
-        fresh->m_next  = m_buckets[idx];
-        m_buckets[idx] = fresh;
+        unique_lock<shared_mutex> lock(m_mtx);
+        auto  idx  = bucket_index(key);
+        auto* node = m_buckets[idx].findNode(key);
+        if (node) return node->m_value;
+        m_buckets[idx].insertKV(key, Value{});
         ++m_size;
-        return fresh->m_value;
+        return m_buckets[idx].findNode(key)->m_value;
+    }
+
+    Value& search(const Key& key) {
+        shared_lock<shared_mutex> lock(m_mtx);
+        auto* node = m_buckets[bucket_index(key)].findNode(key);
+        if (!node) throw runtime_error("key no encontrada");
+        return node->m_value;
     }
 
     bool contains(const Key& key) const {
-        shared_lock lock(m_mtx);
-        Node* cur = m_buckets[bucket_idx(key)];
-        while (cur) {
-            if (cur->m_key == key) return true;
-            cur = cur->m_next;
-        }
-        return false;
+        shared_lock<shared_mutex> lock(m_mtx);
+        return m_buckets[bucket_index(key)].findNode(key) != nullptr;
     }
 
-    bool remove(const Key& key) {
-        unique_lock lock(m_mtx);
-        size_t  idx = bucket_idx(key);
-        Node** cur  = &m_buckets[idx];
-        while (*cur) {
-            if ((*cur)->m_key == key) {
-                Node* del = *cur;
-                *cur = del->m_next;
-                delete del;
-                --m_size;
-                return true;
-            }
-            cur = &(*cur)->m_next;
-        }
-        return false;
-    }
+    size_t size()    const { shared_lock<shared_mutex> lock(m_mtx); return m_size; }
+    bool   isEmpty() const { shared_lock<shared_mutex> lock(m_mtx); return m_size == 0; }
 
-    size_t size()    const { shared_lock lock(m_mtx); return m_size; }
-    bool   isEmpty() const { shared_lock lock(m_mtx); return m_size == 0; }
+    template<typename Func, typename... Args>
+    void forEach(Func func, Args&&... args) {
+        shared_lock<shared_mutex> lock(m_mtx);
+        for (size_t i = 0; i < m_capacity; ++i)
+            m_buckets[i].inorder().forEachNode([&](Node& n) {
+                func(n.m_data, n.m_value, forward<Args>(args)...);
+            });
+    }
 
     string toString() const {
-        shared_lock lock(m_mtx);
+        shared_lock<shared_mutex> lock(m_mtx);
         ostringstream oss;
         oss << "{";
         bool first = true;
-        for (size_t i = 0; i < m_capacity; ++i) {
-            Node* cur = m_buckets[i];
-            while (cur) {
-                if (!first) oss << ",";
-                oss << cur->m_key << ":" << cur->m_value;
+        for (size_t i = 0; i < m_capacity; ++i)
+            m_buckets[i].inorder().forEachNode([&](Node& n) {
+                if (!first) oss << ", ";
+                oss << n;
                 first = false;
-                cur   = cur->m_next;
-            }
-        }
+            });
         oss << "}";
         return oss.str();
     }
 
-    // item de la PC
-    friend ostream& operator<<(ostream& os, const HashTable& h) {
-        return os << h.toString();
+    //operator<<
+    friend ostream& operator<<(ostream& os, const HashTable& t) {
+        return os << t.toString();
     }
 
-    
-    // item de la PC
-    friend istream& operator>>(istream& is, HashTable& h) {
+    //operator>>
+    friend istream& operator>>(istream& is, HashTable& t) {
         char ch;
-        if (!(is >> ch) || ch != '{') { is.setstate(ios::failbit); return is; }
-        while (is.peek() != '}') {
-            Key k; Value v; char colon;
-            if (!(is >> k >> colon >> v)) break;
-            h[k] = v;
-            if (is.peek() == ',') is >> ch; // consume ','
+        if (!(is >> ch) || ch != '{') {
+            is.clear(ios_base::failbit);
+            return is;
         }
-        is >> ch;
+        Key key; Value val; char sep;
+        while (is >> ch && ch != '}') {
+            if (ch != ',') is.putback(ch);
+            if (is >> key >> sep >> val && sep == ':')
+                t.insert(key, val);
+        }
         return is;
     }
 };
-
-void HashTableDemo();
 
 #endif // __HASHTABLE_H__

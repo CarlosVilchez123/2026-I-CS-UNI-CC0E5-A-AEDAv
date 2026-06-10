@@ -1,117 +1,112 @@
-#ifndef __DEMO_HEAP_H__
-#define __DEMO_HEAP_H__
-
 #include <iostream>
-#include <sstream>
+#include <fstream>
 #include <thread>
 #include "../types.h"
 #include "heap.h"
 using namespace std;
 
-using MinHeap = Heap<MinHeapTrait<int>>;
-using MaxHeap = Heap<MaxHeapTrait<int>>;
+using MinHeap = Heap<AscendingTrait<HeapNode<T1>>>;
+using MaxHeap = Heap<DescendingTrait<HeapNode<T1>>>;
 
-static const initializer_list<int> kTestValues = {38, 7, 91, 24, 55, 13, 46};
+static const initializer_list<T1> kTestValues = {10, 4, 15, 1, 7, 12, 3};
 
+// Se implementan funciones
 void DemoMinHeap() {
-    cout << "\nMINHEAP" << endl;
+    cout<<"\nMinHeap"<<endl;
     MinHeap h;
 
-    cout << "insert:" << endl;
-    for (int v : kTestValues) {
-        h.insert(v, v * 5);
-        cout << "insert(" << v << ") -> " << h.toString() << endl;
+    //insert heapifyUp
+    cout<<"insert:"<<endl;
+    for (T1 v : kTestValues) {
+        h.insert(v, v * 10);
+        cout<<"insert("<<v<<")\n"<<h.toString();
     }
 
-    cout << "Tamano: " << h.size() << endl;
-    cout << "peek (minimo): (" << h.peek().getData()
-         << "," << h.peek().getRef() << ")" << endl;
+    // peek
+    auto [pval, pref] = h.peek();
+    cout<<"peek(minimo): "<<pval<<" ref:"<<pref<<endl;
 
-    // operator
-    cout << "\noperator<<: " << h << endl;
+    //operator<<
+    { ofstream os("minheap.txt"); os<<h; }
+    cout<<"operator<<: "<<h<<endl;
 
     // operator>>
     MinHeap h2;
-    istringstream iss("[(3,15),(9,45),(6,30),(21,105)]");
-    iss >> h2;
-    cout << "operator>> cargado: " << h2 << endl;
-    cout << "peek cargado: (" << h2.peek().getData()
-         << "," << h2.peek().getRef() << ")" << endl;
+    { ifstream is("minheap.txt"); is >> h2; }
+    cout<<"operator>> leido: "<<h2<<endl;
 
-    // copy constructor
-    MinHeap copia(h);
-    copia.insert(100, 500);
-    cout << "\nOriginal size: " << h.size()
-         << " | Copia size: "  << copia.size() << endl;
+    //forEach
+    cout<<"forEach:  ";
+    h.forEach([](MinHeap::value_type& v){ cout<<v<<" "; });
+    cout<<endl;
 
-    // move constructor
-    MinHeap movido(move(copia));
-    cout << "Movido size: "        << movido.size()
-         << " | Copia tras move: " << copia.size() << endl;
+    //range-based for
+    cout<<"range-for: ";
+    for (auto& node : h) cout<<node.m_data<<" ";
+    cout<<endl;
 
-    // forward_iterator
-    cout << "\nforward_iterator:" << endl;
-    for (auto it = h.begin(); it != h.end(); ++it)
-        cout << "  (" << (*it).getData() << "," << (*it).getRef() << ")" << endl;
-
-    // extract orden ascendente
-    cout << "\nextract orden ascendente:" << endl;
+    //extract heapifyDown
+    cout<<"\nextract (orden ascendente):"<<endl;
     while (!h.isEmpty()) {
-        cout << "  extract -> (" << h.peek().getData()
-             << "," << h.peek().getRef() << ")" << endl;
-        h.extract();
+        auto [val, ref] = h.extract();
+        cout<<"  extract -> "<<val<<" | ";
+        h.forEach([](MinHeap::value_type& v){ cout<<v<<" "; });
+        cout<<endl;
     }
 }
 
 void DemoMaxHeap() {
-    cout << "\nMAXHEAP" << endl;
+    cout<<"\nMaxHeap"<<endl;
     MaxHeap h;
 
-    cout << "insert:" << endl;
-    for (int v : kTestValues) {
-        h.insert(v, v * 3);
-        cout << "insert(" << v << ") -> " << h.toString() << endl;
+    cout<<"insert:"<<endl;
+    for (T1 v : kTestValues) {
+        h.insert(v, v * 10);
+        cout<<"insert("<<v<<")\n"<<h.toString();
     }
 
-    cout << "Tamano: " << h.size() << endl;
-    cout << "peek (maximo): (" << h.peek().getData()
-         << "," << h.peek().getRef() << ")" << endl;
+    auto [pval, pref] = h.peek();
+    cout<<"peek (maximo): "<<pval<<" ref:"<<pref<<endl;
 
-    // forward_iterator
-    cout << "\nforward_iterator:" << endl;
-    for (auto it = h.begin(); it != h.end(); ++it)
-        cout << "  (" << (*it).getData() << "," << (*it).getRef() << ")" << endl;
+    // forEach
+    cout<<"forEach:  ";
+    h.forEach([](MaxHeap::value_type& v){ cout<<v<<" "; });
+    cout<<endl;
 
-    // extract orden descendente
-    cout << "\nextract orden descendente:" << endl;
+    // range-based for
+    cout<<"range-for: ";
+    for (auto& node : h) cout<<node.m_data<<" ";
+    cout<<endl;
+
+    cout<<"\nextract descendente:"<<endl;
     while (!h.isEmpty()) {
-        cout << "  extract -> (" << h.peek().getData()
-             << "," << h.peek().getRef() << ")" << endl;
-        h.extract();
+        auto [val, ref] = h.extract();
+        cout<<"  extract -> "<<val<<" | ";
+        h.forEach([](MaxHeap::value_type& v){ cout<<v<<" "; });
+        cout<<endl;
     }
 }
 
 void DemoHeapConcurrencia() {
-    cout << "\nCONCURRENCIA" << endl;
+    cout<<"\nconcurrencia"<<endl;
     MinHeap h;
-    auto worker = [&h](int id) {
-        for (int i = 0; i < 200; ++i)
-            h.insert(i * id, id);
+    auto worker = [&h](MinHeap::value_type id) {
+        MinHeap::value_type i{};
+        while (i < 200) { h.insert(i * id, id); ++i; }
     };
     thread th1(worker,1), th2(worker,2), th3(worker,3),
            th4(worker,4), th5(worker,5);
     th1.join(); th2.join(); th3.join(); th4.join(); th5.join();
-    cout << "size esperado 1000: " << h.size() << endl;
-    cout << "peek minimo: (" << h.peek().getData()
-         << "," << h.peek().getRef() << ")" << endl;
+    cout<<"size 1000: "<<h.size()<<endl;
+    auto [val, ref] = h.peek();
+    cout<<"peek minimo: "<<val<<endl;
 }
 
 void HeapDemo() {
-    cout << "\nPRUEBAS HEAP" << endl;
+    cout<<endl;
+    cout<<"PRUEBAS HEAP"<<endl;
     DemoMinHeap();
     DemoMaxHeap();
     DemoHeapConcurrencia();
-    cout << "\nFIN DE LAS PRUEBAS" << endl;
+    cout<<"\nFIN DE LAS PRUEBAS"<<endl;
 }
-
-#endif // __DEMO_HEAP_H__

@@ -1,7 +1,7 @@
 #ifndef __AVL_H__
 #define __AVL_H__
 
-#include "binarytree.h"
+#include "BinaryTree.h"
 
 //AVLNode
 template<typename T>
