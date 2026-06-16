@@ -1,62 +1,47 @@
 #include <iostream>
 #include <string>
-#include <sstream>
 #include "../types.h"
 #include "hashtable.h"
 
 using namespace std;
 
+void printLookup(HashTable<Ref, string>& m, Ref key) {
+    cout << "m[" << key << "] = " << m[key] << endl;
+}
+
+void printForRange(HashTable<Ref, string>& m) {
+    cout << "\nfor-range:" << endl;
+    for (const auto& [key, value] : m)
+        cout << "  Key: " << key << " -> Value: " << value << endl;
+}
+
+void printToString(const HashTable<Ref, string>& m) {
+    cout << "\noperator<< (toString):" << endl;
+    cout << m << endl;
+}
+
+void printSizeComparison(const HashTable<Ref, string>& original,
+                         const HashTable<Ref, string>& copia) {
+    cout << "\nTamano Original: " << original.size()
+         << " | Tamano Copia: "  << copia.size() << endl;
+}
+
 void DemoHashTable() {
-    cout << "Prueba hastbale" << endl;
+    cout << "PRUEBAS HASHTABLE" << endl;
 
-    HashTable<int, int> tabla(7);
-    tabla[101] = 500;
-    tabla[202] = 300;
-    tabla[303] = 800;
-    tabla[404] = 150;
-    tabla[505] = 600;
-    tabla[101] = 450; // sobrescribe
+    HashTable<Ref, string> m(3);
+    m[11] = "once";
+    m[15] = "quince";
+    m[11] = "oncePri";
+    m[3]  = "Tres";
 
-    cout << "tabla[101] = " << tabla[101] << endl;
-    cout << "tabla[303] = " << tabla[303] << endl;
-    cout << "Tamano: " << tabla.size() << endl;
+    printLookup(m, 11);
+    printForRange(m);
+    printToString(m);
 
-    // --- contains y remove ---
-    cout << "\nCONTAINS Y REMOVE" << endl;
-    cout << "contains(202): " << (tabla.contains(202) ? "si" : "no") << endl;
-    cout << "contains(999): " << (tabla.contains(999) ? "si" : "no") << endl;
+    HashTable<Ref, string> copia(m);
+    copia[99] = "Dato de Copia";
+    printSizeComparison(m, copia);
 
-    tabla.remove(202);
-    cout << "Tras remove(202):" << endl;
-    cout << "contains(202): " << (tabla.contains(202) ? "si" : "no") << endl;
-    cout << "Tamano: " << tabla.size() << endl;
-
-    // --- for-range ---
-    cout << "\nFOR-RANGE" << endl;
-    for (const auto& [key, value] : tabla)
-        cout << "  " << key << " -> " << value << endl;
-
-    // --- operator<< ---
-    cout << "\nOPERATOR<<" << endl;
-    cout << tabla << endl;
-
-    // --- operator>> ---
-    cout << "\nOPERATOR>> " << endl;
-    HashTable<int, int> cargado(4);
-    istringstream iss("{11:100,22:200,33:300}");
-    iss >> cargado;
-    cout << "Cargado desde stream: " << cargado << endl;
-
-    // --- copy constructor ---
-    cout << "\nCOPIA" << endl;
-    HashTable<int, int> copia(cargado);
-    copia[44] = 400;
-    cout << "Original size: " << cargado.size()
-         << " | Copia size: " << copia.size() << endl;
-
-    // --- move constructor ---
-    cout << "\nMOVE" << endl;
-    HashTable<int, int> movido(move(copia));
-    cout << "Movido size: "        << movido.size()
-         << " | Copia tras move: " << copia.size() << endl;
+    cout << "\nFIN PRUEBAS HASHTABLE" << endl;
 }
