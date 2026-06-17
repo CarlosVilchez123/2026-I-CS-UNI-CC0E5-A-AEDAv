@@ -10,14 +10,12 @@
 #include "avl.h"
 using namespace std;
 
-//hashNode
-// Ahora recibe Trait en lugar de <Key,Value> sueltos.
-// Extrae Key y Value del trait para mantener exactamente la misma estructura interna.
+// ahora recibe traits
 template<typename Trait>
 struct HashNode : BinaryTreeNode<typename Trait::Key, HashNode<Trait>> {
     using Key        = typename Trait::Key;
     using Value      = typename Trait::Value;
-    using value_type = Key;                          // requerido por BaseTrait / AscendingTrait
+    using value_type = Key;                         
 
     Value m_value;
 
@@ -35,9 +33,7 @@ struct HashNode : BinaryTreeNode<typename Trait::Key, HashNode<Trait>> {
     }
 };
 
-//hashBucket
-// Recibe Trait; construye el AscendingTrait interno usando HashNode<Trait>.
-// Todo lo demas es identico al original.
+// ahora recibe tratis
 template<typename Trait>
 class HashBucket : public BinaryTree<AscendingTrait<HashNode<Trait>>> {
 public:
