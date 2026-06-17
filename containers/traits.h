@@ -16,4 +16,19 @@ template <typename _Node>
 struct DescendingTrait : public BaseTrait<_Node, std::greater<typename _Node::value_type>>{
 };
 
+template <
+    typename _Key,
+    typename _Value,
+    typename _Hash = std::hash<_Key>,
+    typename _Comp = std::less<_Key>
+>
+
+// hacerlo nativo del trait
+struct KVTrait {
+    using Key   = _Key;
+    using Value = _Value;
+    using Hash  = _Hash;
+    using Comp  = _Comp;
+};
+
 #endif // __TRAITS_H__

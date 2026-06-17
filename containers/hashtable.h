@@ -11,33 +11,44 @@
 using namespace std;
 
 //hashNode
-template<typename Key, typename Value>
-struct HashNode : BinaryTreeNode<Key, HashNode<Key,Value>> {
-    using value_type = Key;
+// Ahora recibe Trait en lugar de <Key,Value> sueltos.
+// Extrae Key y Value del trait para mantener exactamente la misma estructura interna.
+template<typename Trait>
+struct HashNode : BinaryTreeNode<typename Trait::Key, HashNode<Trait>> {
+    using Key        = typename Trait::Key;
+    using Value      = typename Trait::Value;
+    using value_type = Key;                          // requerido por BaseTrait / AscendingTrait
+
     Value m_value;
-    HashNode() : BinaryTreeNode<Key, HashNode<Key,Value>>(Key{}, Ref{}),
+
+    HashNode() : BinaryTreeNode<Key, HashNode<Trait>>(Key{}, Ref{}),
                  m_value(Value{}) {}
     HashNode(Key key, Ref ref)
-        : BinaryTreeNode<Key, HashNode<Key,Value>>(key, ref),
+        : BinaryTreeNode<Key, HashNode<Trait>>(key, ref),
           m_value(Value{}) {}
     HashNode(Key key, Value value, Ref ref = Ref{})
-        : BinaryTreeNode<Key, HashNode<Key,Value>>(key, ref),
+        : BinaryTreeNode<Key, HashNode<Trait>>(key, ref),
           m_value(value) {}
+
     friend ostream& operator<<(ostream& os, const HashNode& n) {
         return os << n.m_data << ":" << n.m_value;
     }
 };
 
 //hashBucket
-template<typename Key, typename Value>
-class HashBucket : public BinaryTree<AscendingTrait<HashNode<Key,Value>>> {
+// Recibe Trait; construye el AscendingTrait interno usando HashNode<Trait>.
+// Todo lo demas es identico al original.
+template<typename Trait>
+class HashBucket : public BinaryTree<AscendingTrait<HashNode<Trait>>> {
 public:
-    using Node = HashNode<Key,Value>;
+    using Key   = typename Trait::Key;
+    using Value = typename Trait::Value;
+    using Node  = HashNode<Trait>;
 
-    HashBucket() : BinaryTree<AscendingTrait<HashNode<Key,Value>>>() {}
+    HashBucket() : BinaryTree<AscendingTrait<Node>>() {}
 
     HashBucket(const HashBucket& other)
-        : BinaryTree<AscendingTrait<HashNode<Key,Value>>>() {
+        : BinaryTree<AscendingTrait<Node>>() {
         shared_lock<shared_mutex> lock(other.m_mtx);
         this->m_pRoot = internal_copy(static_cast<Node*>(other.m_pRoot));
     }
@@ -55,8 +66,8 @@ protected:
     Node* internal_copy(Node* pNode) override {
         if (!pNode) return nullptr;
         auto* n        = new Node(pNode->m_data, pNode->m_value, pNode->m_ref);
-        n->m_pChild[0] = internal_copy(pNode->m_pChild[0]);
-        n->m_pChild[1] = internal_copy(pNode->m_pChild[1]);
+        n->m_pChild[0] = internal_copy(static_cast<Node*>(pNode->m_pChild[0]));
+        n->m_pChild[1] = internal_copy(static_cast<Node*>(pNode->m_pChild[1]));
         return n;
     }
 
@@ -70,7 +81,7 @@ public:
         if (found) found->m_value = value;
     }
 
-    //busca nodo porkey
+    //busca nodo por key
     Node* findNode(const Key& key) const {
         Node* result = nullptr;
         const_cast<HashBucket*>(this)->inorder().forEachNode([&](Node& n) {
@@ -80,7 +91,6 @@ public:
     }
 };
 
-//KVPair
 template<typename Key, typename Value>
 struct KVPair {
     const Key& key;
@@ -105,14 +115,17 @@ decltype(auto) get(const KVPair<Key,Value>& p) {
     if constexpr (I == 0) return p.key; else return p.value;
 }
 
-//hashTable
-template<typename Key, typename Value>
+//Hastable ahora recibe el trait
+template<typename Trait>
 class HashTable {
 public:
-    using Node      = HashNode<Key, Value>;
-    using Bucket    = HashBucket<Key, Value>;
-    using MySelf    = HashTable<Key, Value>;
-    using key_type  = Key;
+    using Key         = typename Trait::Key;
+    using Value       = typename Trait::Value;
+    using Hash        = typename Trait::Hash;
+    using Node        = HashNode<Trait>;
+    using Bucket      = HashBucket<Trait>;
+    using MySelf      = HashTable<Trait>;
+    using key_type    = Key;
     using mapped_type = Value;
 
 private:
@@ -123,12 +136,13 @@ private:
     size_t               m_size;
     mutable shared_mutex m_mtx;
 
+    // Usa Hash del trait en lugar de std::hash<Key> hardcodeado
     size_t bucket_index(const Key& key) const {
-        return std::hash<Key>{}(key) % m_capacity;
+        return Hash{}(key) % m_capacity;
     }
 
 public:
-    //iterador
+    //iterador  (sin cambios)
     struct Iterator {
         HashTable *m_table;
         size_t     m_bucket;
@@ -186,7 +200,7 @@ public:
             m_buckets[i] = other.m_buckets[i];
     }
 
-    //ove constructor
+    //move constructor
     HashTable(HashTable&& other)
         : m_buckets(nullptr), m_capacity(0), m_size(0) {
         unique_lock<shared_mutex> lock(other.m_mtx);

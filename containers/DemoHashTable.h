@@ -5,23 +5,23 @@
 
 using namespace std;
 
-void printLookup(HashTable<Ref, string>& m, Ref key) {
+void printLookup(HashTable<KVTrait<Ref, string>>& m, Ref key) {
     cout << "m[" << key << "] = " << m[key] << endl;
 }
 
-void printForRange(HashTable<Ref, string>& m) {
+void printForRange(HashTable<KVTrait<Ref, string>>& m) {
     cout << "\nfor-range:" << endl;
     for (const auto& [key, value] : m)
         cout << "  Key: " << key << " -> Value: " << value << endl;
 }
 
-void printToString(const HashTable<Ref, string>& m) {
+void printToString(const HashTable<KVTrait<Ref, string>>& m) {
     cout << "\noperator<< (toString):" << endl;
     cout << m << endl;
 }
 
-void printSizeComparison(const HashTable<Ref, string>& original,
-                         const HashTable<Ref, string>& copia) {
+void printSizeComparison(const HashTable<KVTrait<Ref, string>>& original,
+                         const HashTable<KVTrait<Ref, string>>& copia) {
     cout << "\nTamano Original: " << original.size()
          << " | Tamano Copia: "  << copia.size() << endl;
 }
@@ -29,7 +29,7 @@ void printSizeComparison(const HashTable<Ref, string>& original,
 void DemoHashTable() {
     cout << "PRUEBAS HASHTABLE" << endl;
 
-    HashTable<Ref, string> m(3);
+    HashTable<KVTrait<Ref, string>> m(3);
     m[11] = "once";
     m[15] = "quince";
     m[11] = "oncePri";
@@ -39,7 +39,7 @@ void DemoHashTable() {
     printForRange(m);
     printToString(m);
 
-    HashTable<Ref, string> copia(m);
+    HashTable<KVTrait<Ref, string>> copia(m);
     copia[99] = "Dato de Copia";
     printSizeComparison(m, copia);
 
