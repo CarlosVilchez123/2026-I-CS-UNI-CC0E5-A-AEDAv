@@ -10,12 +10,11 @@
 #include "avl.h"
 using namespace std;
 
-// ahora recibe traits
 template<typename Trait>
 struct HashNode : BinaryTreeNode<typename Trait::Key, HashNode<Trait>> {
     using Key        = typename Trait::Key;
     using Value      = typename Trait::Value;
-    using value_type = Key;                         
+    using value_type = Key;                          // requerido por BaseTrait / AscendingTrait
 
     Value m_value;
 
@@ -33,7 +32,6 @@ struct HashNode : BinaryTreeNode<typename Trait::Key, HashNode<Trait>> {
     }
 };
 
-// ahora recibe tratis
 template<typename Trait>
 class HashBucket : public BinaryTree<AscendingTrait<HashNode<Trait>>> {
 public:
@@ -46,14 +44,14 @@ public:
     HashBucket(const HashBucket& other)
         : BinaryTree<AscendingTrait<Node>>() {
         shared_lock<shared_mutex> lock(other.m_mtx);
-        this->m_pRoot = internal_copy(static_cast<Node*>(other.m_pRoot));
+        this->m_pRoot = internal_copy(other.m_pRoot);
     }
 
     HashBucket& operator=(const HashBucket& other) {
         if (this != &other) {
             this->clear();
             shared_lock<shared_mutex> lock(other.m_mtx);
-            this->m_pRoot = internal_copy(static_cast<Node*>(other.m_pRoot));
+            this->m_pRoot = internal_copy(other.m_pRoot);
         }
         return *this;
     }
@@ -62,8 +60,8 @@ protected:
     Node* internal_copy(Node* pNode) override {
         if (!pNode) return nullptr;
         auto* n        = new Node(pNode->m_data, pNode->m_value, pNode->m_ref);
-        n->m_pChild[0] = internal_copy(static_cast<Node*>(pNode->m_pChild[0]));
-        n->m_pChild[1] = internal_copy(static_cast<Node*>(pNode->m_pChild[1]));
+        n->m_pChild[0] = internal_copy(pNode->child(0));
+        n->m_pChild[1] = internal_copy(pNode->child(1));
         return n;
     }
 
@@ -111,7 +109,6 @@ decltype(auto) get(const KVPair<Key,Value>& p) {
     if constexpr (I == 0) return p.key; else return p.value;
 }
 
-//Hastable ahora recibe el trait
 template<typename Trait>
 class HashTable {
 public:
