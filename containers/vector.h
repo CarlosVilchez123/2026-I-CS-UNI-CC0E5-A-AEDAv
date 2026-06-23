@@ -1,181 +1,186 @@
 #ifndef __VECTOR_H__
 #define __VECTOR_H__
 
-#include <iostream>
-#include <cstddef> // size_t
-#include <string>
 #include <sstream>
-#include <shared_mutex> // shared_mutex
-#include "general_iterator.h"
-#include "util.h"
-#include <mutex>
+#include <utility>
 #include "../types.h"
-using namespace std;
 
-template <typename Container>
-class vector_forward_iterator : public general_iterator<Container, vector_forward_iterator<Container>> {
+template <typename T>
+struct VectorNode {
+    using value_type = T;
+    T m_data;
+
+    VectorNode() : m_data(T{}) {}
+    explicit VectorNode(const T &data) : m_data(data) {}
+    T       &getDataRef()       { return m_data; }
+    const T &getDataRef() const { return m_data; }
+};
+
+template <typename Container, typename Derived>
+class VectorIteratorBase {
 public:
-    using MySelf = vector_forward_iterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Parent::Parent;
-    MySelf operator++() { this->m_pNode++; return *this; }
+    using Node = typename Container::Node;
+
+protected:
+    Node *m_pNode;
+
+public:
+    VectorIteratorBase(Node *p) : m_pNode(p) {}
+
+    typename Container::value_type &operator*() { return m_pNode->getDataRef(); }
+
+    friend flag operator==(const Derived &a, const Derived &b) { return a.m_pNode == b.m_pNode; }
+    friend flag operator!=(const Derived &a, const Derived &b) { return a.m_pNode != b.m_pNode; }
 };
 
 template <typename Container>
-class vector_backward_iterator : public general_iterator<Container, vector_backward_iterator<Container>> {
+class VectorForwardIterator
+    : public VectorIteratorBase<Container, VectorForwardIterator<Container>> {
+    using Base = VectorIteratorBase<Container, VectorForwardIterator<Container>>;
 public:
-    using MySelf = vector_backward_iterator<Container>;
-    using Parent = general_iterator<Container, MySelf>;
-    using Parent::Parent;
-    MySelf operator++() { this->m_pNode--; return *this; }
+    using Base::Base;
+    VectorForwardIterator &operator++() { ++this->m_pNode; return *this; }
+};
+
+template <typename Container>
+class VectorBackwardIterator
+    : public VectorIteratorBase<Container, VectorBackwardIterator<Container>> {
+    using Base = VectorIteratorBase<Container, VectorBackwardIterator<Container>>;
+public:
+    using Base::Base;
+    VectorBackwardIterator &operator++() { --this->m_pNode; return *this; }
 };
 
 template <typename T>
-class VectorNode{
-    T   m_data;
-    Ref m_ref;
+class Vector {
 public:
-    VectorNode() : m_data(T()), m_ref(Ref()) {}
-    VectorNode(T data, Ref ref) : m_data(data), m_ref(ref) {}
-    VectorNode(const VectorNode &other) : m_data(other.m_data), m_ref(other.m_ref) {}
-    VectorNode(VectorNode &&other) : m_data(move(other.m_data)), m_ref(move(other.m_ref)) {}
-    VectorNode& operator=(const VectorNode &other) {
-        m_data = other.m_data;
-        m_ref = other.m_ref;
-        return *this;
-    }
-    VectorNode& operator=(VectorNode &&other) {
-        m_data = move(other.m_data);
-        m_ref = move(other.m_ref);
-        return *this;
-    }
+    using value_type        = T;
+    using Node              = VectorNode<T>;
+    using forward_iterator  = VectorForwardIterator<Vector<T>>;
+    using backward_iterator = VectorBackwardIterator<Vector<T>>;
 
-    T    getData() const { return m_data; }
-    T&   getDataRef() { return m_data; }
-    void setData(T data) { m_data = data; }
-    Ref  getRef() { return m_ref; }
-    void setRef(Ref ref) { m_ref = ref; }
-    
-};
-
-template <typename T>
-ostream& operator<<(ostream& os, VectorNode<T>& node){
-    return os << "(" << node.getData() << ", " << node.getRef() << ")";
-}
-
-template <typename T>
-class Vector{
-public:
-    using  value_type = T;
-    using  forward_iterator   = vector_forward_iterator < Vector<T> > ;
-    friend forward_iterator;
-    using  backward_iterator  = vector_backward_iterator< Vector<T> > ;
-    friend backward_iterator;
-    using  Node               = VectorNode<T>;
 private:
-    size_t  m_capacity;
-    size_t  m_size;
-    Node   *m_data;
-    mutable shared_mutex m_mtx;
-    void    resize();
-public:
-    Vector(size_t capacity = 10);
-    virtual ~Vector();
-    virtual void push_back(value_type value, Ref ref);
-    virtual size_t size() const;
-    virtual string toString() const;
+    Node  *m_data;
+    size   m_sz;
+    size   m_capacity;
 
-    forward_iterator begin() { return forward_iterator(this, m_data); }
-    forward_iterator end()   { return forward_iterator(this, m_data + m_size); }
-
-    backward_iterator rbegin() { return backward_iterator(this, m_data + m_size - 1); }
-    backward_iterator rend()   { return backward_iterator(this, m_data - 1); }
-    
-    // Done: Agregar control concurrente
-    template <typename Func, typename... Args>
-    void ForEach(Func func, Args &&...  args){
-        unique_lock<shared_mutex> lock(m_mtx);
-        ::ForEach(begin(), end(), func, std::forward<Args>(args)... );
+    void grow() {
+        size newCap = (m_capacity < 10) ? m_capacity + 10 : m_capacity * 2;
+        Node *tmp = new Node[newCap];
+        for (size i = 0; i < m_sz; ++i)
+            tmp[i] = m_data[i];
+        delete[] m_data;
+        m_data     = tmp;
+        m_capacity = newCap;
     }
 
-    // Done: Agregar control concurrente
+public:
+    explicit Vector(size capacity = 10)
+        : m_data(new Node[capacity]), m_sz(0), m_capacity(capacity) {}
+
+    Vector(const Vector &other)
+        : m_data(new Node[other.m_capacity])
+        , m_sz(other.m_sz)
+        , m_capacity(other.m_capacity)
+    {
+        for (size i = 0; i < m_sz; ++i)
+            m_data[i] = other.m_data[i];
+    }
+
+    Vector(Vector &&other) noexcept
+        : m_data(other.m_data), m_sz(other.m_sz), m_capacity(other.m_capacity)
+    {
+        other.m_data     = nullptr;
+        other.m_sz       = 0;
+        other.m_capacity = 0;
+    }
+
+    Vector &operator=(const Vector &other) {
+        if (this == &other) return *this;
+        delete[] m_data;
+        m_capacity = other.m_capacity;
+        m_sz       = other.m_sz;
+        m_data     = new Node[m_capacity];
+        for (size i = 0; i < m_sz; ++i)
+            m_data[i] = other.m_data[i];
+        return *this;
+    }
+
+    Vector &operator=(Vector &&other) noexcept {
+        if (this == &other) return *this;
+        delete[] m_data;
+        m_data           = other.m_data;
+        m_sz             = other.m_sz;
+        m_capacity       = other.m_capacity;
+        other.m_data     = nullptr;
+        other.m_sz       = 0;
+        other.m_capacity = 0;
+        return *this;
+    }
+
+    ~Vector() { delete[] m_data; }
+
+    void push_back(const T &val) {
+        if (m_sz == m_capacity) grow();
+        m_data[m_sz++] = Node(val);
+    }
+
+    void assign(size n, const T &val) {
+        if (n > m_capacity) {
+            delete[] m_data;
+            m_capacity = n;
+            m_data     = new Node[m_capacity];
+        }
+        for (size i = 0; i < n; ++i)
+            m_data[i] = Node(val);
+        m_sz = n;
+    }
+
+    T       &operator[](size i)       { return m_data[i].m_data; }
+    const T &operator[](size i) const { return m_data[i].m_data; }
+
+    T       &back()       { return m_data[m_sz - 1].m_data; }
+    const T &back() const { return m_data[m_sz - 1].m_data; }
+
+    void pop_back() { if (m_sz > 0) --m_sz; }
+
+    size numElems()  const { return m_sz;       }
+    size capacity()  const { return m_capacity; }
+    flag empty()     const { return m_sz == 0;  }
+
+    flag operator==(const Vector &o) const {
+        if (m_sz != o.m_sz) return false;
+        for (size i = 0; i < m_sz; ++i)
+            if (!(m_data[i].m_data == o.m_data[i].m_data)) return false;
+        return true;
+    }
+    flag operator!=(const Vector &o) const { return !(*this == o); }
+
+    forward_iterator  begin()  { return forward_iterator (m_data);        }
+    forward_iterator  end()    { return forward_iterator (m_data + m_sz); }
+    backward_iterator rbegin() { return backward_iterator(m_data + m_sz - 1); }
+    backward_iterator rend()   { return backward_iterator(m_data - 1);        }
+
     template <typename Func, typename... Args>
-    void ReverseForEach(Func func, Args &&...  args){
-        unique_lock<shared_mutex> lock(m_mtx);
-        if(m_size == 0)
-            return;
-        ::ForEach(rbegin(), rend(), func, std::forward<Args>(args)... );
+    void forEach(Func func, Args &&...args) {
+        for (size i = 0; i < m_sz; ++i)
+            func(m_data[i].m_data, std::forward<Args>(args)...);
+    }
+
+    std::string toString() const {
+        std::ostringstream oss;
+        oss << "[";
+        for (size i = 0; i < m_sz; ++i) {
+            if (i > 0) oss << ", ";
+            oss << m_data[i].m_data;
+        }
+        oss << "]";
+        return oss.str();
+    }
+
+    friend std::ostream &operator<<(std::ostream &os, const Vector &v) {
+        return os << v.toString();
     }
 };
 
-template <typename T>
-Vector<T>::Vector(size_t capacity){
-    m_capacity = capacity;
-    m_size = 0;
-    m_data = new Node[capacity];
-}
-
-template <typename T>
-Vector<T>::~Vector(){
-    delete [] m_data;
-}
-
-template <typename T>
-void Vector<T>::resize(){
-    m_capacity = (m_capacity < 10) ? m_capacity+10 : m_capacity * 2;
-    Node * new_data = new Node[m_capacity];
-    for(size_t i = 0; i < m_size; ++i)
-        new_data[i] = m_data[i];
-    delete [] m_data;
-    m_data = new_data;
-}
-
-template <typename T>
-void Vector<T>::push_back(value_type value, Ref ref){
-    unique_lock<shared_mutex> lock(m_mtx);
-    if(m_size == m_capacity) // Overflow
-        resize();
-    m_data[m_size++] = Node(value, ref);
-}
-
-template <typename T>
-size_t Vector<T>::size() const{
-    shared_lock<shared_mutex> lock(m_mtx);
-    return m_size;
-}
-
-template <typename T>
-string Vector<T>::toString() const{
-    shared_lock<shared_mutex> lock(m_mtx);
-    ostringstream oss;
-    oss << "[";
-    for(size_t i = 0; i < m_size; ++i){
-        if(i > 0)
-            oss << ",";
-        oss << m_data[i];
-    }
-    oss << "]";
-    return oss.str();
-}
-
-template <typename T>
-ostream& operator<<(ostream& os, const Vector<T>& v){
-    return os << v.toString();
-}
-
-// TODO: Implementar
-template <typename T>
-istream& operator>>(istream& is, Vector<T>& v){
-    return is;
-}
-
-// template <typename T>
-// template <typename Func, typename... Args>
-// void Vector<T>::ForEach(Func func, Args &&...  args){
-//     ::ForEach(begin(), end(), func, std::forward<Args>(args)... );
-// }
-
-void DemoVector();
-void DemoConcurrentVector();
-
-#endif // __VECTOR_H__
+#endif

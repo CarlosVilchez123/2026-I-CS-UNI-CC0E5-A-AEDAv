@@ -1,17 +1,21 @@
 #ifndef __TYPES_H__
 #define __TYPES_H__
 
-// C/C++
-// typedef int Type;
+#include <cstddef>
+#include <cstdint>
 
-// C++11, C++14, C++17, C++20, C++23 ...
-using Type = int;
+using Type      = int;
+using T1        = int;          // int en 32-bit, long long en 64-bit
+using Ref       = long;         // referencia/ID de objeto
+using size      = std::size_t;  // tamaño sin signo
+using level     = std::size_t;  // profundidad en el árbol
+using flag      = std::size_t;  // booleano de ancho de máquina (0/1)
+using sindex    = std::ptrdiff_t; // índice con signo (para loops inversos)
+using BTreeChar = char;
+using TypeBTree = char; 
 
-// T1 must be int for 32-bit architecture and long long for 64-bit architecture
-// It must work for windows, linux, iOS, macOS, android, etc.
+inline size   asSize  (sindex i) { return static_cast<size>  (i); }
+inline sindex asSIndex(size   i) { return static_cast<sindex>(i); }
 
-using T1 = int;
-
-using Ref = long;
 
 #endif // __TYPES_H__
