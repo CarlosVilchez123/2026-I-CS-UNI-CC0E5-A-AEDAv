@@ -147,7 +147,7 @@ public:
 
         void descendLeft(Page* node, size idx) {
             while (node && node->m_keyCount > 0) {
-                m_stack.push_back(node, static_cast<Ref>(idx));
+                m_stack.push_back(node, asSIndex(idx));
                 node = node->m_children[idx];
                 idx  = 0;
             }
@@ -173,7 +173,7 @@ public:
             size  idx  = asSize(m_stack.backNode().getRef());
             m_stack.pop_back();
             if (idx + 1 < page->m_keyCount)
-                m_stack.push_back(page, static_cast<Ref>(idx + 1));
+                m_stack.push_back(page, asSIndex(idx + 1));
             Page* right = page->m_children.node(idx + 1).getDataRef();
             if (right) descendLeft(right, 0);
             return *this;
