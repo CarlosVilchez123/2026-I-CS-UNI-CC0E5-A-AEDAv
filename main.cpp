@@ -1,6 +1,6 @@
+#include "containers/BTreeDemo.h"
 
-void ListsDemo();
-int main(){
-
+int main() {
+    DemoBTree(std::cout);
     return 0;
 }

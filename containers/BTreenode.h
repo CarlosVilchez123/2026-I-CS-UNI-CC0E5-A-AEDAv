@@ -51,10 +51,10 @@ template <typename Trait, typename _Child>
 struct BTreeNode {
     using value_type = typename Trait::value_type;
     using Entry      = BTreeEntry<value_type>;
-    using Child      = _Child;                   // tipo real del hijo
+    using Child      = _Child;                   
 
-    std::vector<Entry>   m_keys;
-    std::vector<Child*>  m_children;             // ya tipado — sin cast
+    Vector<VectorTrait<Entry>>   m_keys;
+    Vector<VectorTrait<Child*>>  m_children;
     size                 m_keyCount;
     size                 m_maxKeys;
     size                 m_childMaxKeys;
@@ -76,7 +76,7 @@ struct BTreeNode {
     ~BTreeNode() {
         for (size i = 0; i <= m_keyCount; ++i)
             delete m_children[i];
-        m_children.assign(m_children.size(), nullptr);
+        m_children.assign(m_children.numElems(), nullptr);
     }
 
     flag isLeaf()      const { return m_children[0] == nullptr; }

@@ -3,6 +3,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <shared_mutex>
+#include <mutex>
 
 using Type      = int;
 using T1        = int;          // int en 32-bit, long long en 64-bit
@@ -16,6 +18,11 @@ using TypeBTree = char;
 
 inline size   asSize  (sindex i) { return static_cast<size>  (i); }
 inline sindex asSIndex(size   i) { return static_cast<sindex>(i); }
+
+using SMutex = std::shared_mutex;
+template <typename M = SMutex> using SLock = std::shared_lock<M>;
+template <typename M = SMutex> using ULock = std::unique_lock<M>;
+template <typename K, typename V> struct KVResult { K key; V ref; };
 
 
 #endif // __TYPES_H__

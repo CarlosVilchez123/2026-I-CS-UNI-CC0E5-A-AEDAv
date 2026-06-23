@@ -6,9 +6,10 @@
 #include "../types.h"
 #include "traits.h"
 #include "BTreeNode.h"
-#include "btree_utils.h"
+#include "util.h"
 
 template <typename Trait> class BTree;
+
 
 template <typename Trait>
 class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
@@ -23,15 +24,18 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
 
     Comp m_comp{};
 
+    
     size locate(const Value& key) const {
         size pos = btree_utils::lowerBound(this->m_keys, this->m_keyCount, key);
         return pos;
     }
 
+    
     Self* child(size i) const {
         return this->m_children[i];
     }
 
+    
     size freeOnLeft(size pos)  const {
         return pos > 0 ? child(pos - 1)->freeCells() : 0;
     }
@@ -39,10 +43,12 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         return pos < this->m_keyCount ? child(pos + 1)->freeCells() : 0;
     }
 
+    
     Entry& leftmostEntry() {
         return this->isLeaf() ? this->m_keys[0] : child(0)->leftmostEntry();
     }
 
+    
     void shiftFromRight(size pos) {
         Self* src = child(pos);
         Self* dst = child(pos - 1);
@@ -59,6 +65,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         }
     }
 
+    
     void shiftFromLeft(size pos) {
         Self* src = child(pos);
         Self* dst = child(pos + 1);
@@ -73,23 +80,26 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         }
     }
 
-    void drain(Self* node, Vector<Entry>& keys, Vector<Self*>& children) {
+    
+    void drain(Self* node, Vector<VectorTrait<Entry>>& keys, Vector<VectorTrait<Self*>>& children) {
         size n = node->m_keyCount;
         for (size i = 0; i < n; ++i) {
             keys.push_back(node->m_keys[i]);
-            children.push_back(child_of(node, i));
+            children.push_back(child_of(node, i), Ref{});
         }
-        children.push_back(child_of(node, n));
+        children.push_back(child_of(node, n), Ref{});
         node->clearKeys();
     }
 
+    
     static Self* child_of(Self* node, size i) {
         return node->m_children[i];
     }
 
+    
     void distributeIntoThree(
-        Vector<Entry>&  tmpKeys,
-        Vector<Self*>&  tmpChildren,
+        Vector<VectorTrait<Entry>>&  tmpKeys,
+        Vector<VectorTrait<Self*>>&  tmpChildren,
         Self*& c1, Self*& c2, Self*& c3,
         Entry& e1,  Entry& e2)
     {
@@ -120,6 +130,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         fill(c3, mid2 + 1, total);
     }
 
+    
     void splitChild(size pos) {
         Self *c1 = nullptr, *c2 = nullptr;
 
@@ -133,8 +144,8 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
             c2 = child(pos + 1);
         }
 
-        Vector<Entry> tmpKeys;
-        Vector<Self*> tmpChildren;
+        Vector<VectorTrait<Entry>> tmpKeys;
+        Vector<VectorTrait<Self*>> tmpChildren;
         drain(c1, tmpKeys, tmpChildren);
         tmpKeys.push_back(this->m_keys[pos]);
         drain(c2, tmpKeys, tmpChildren);
@@ -151,16 +162,18 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         this->m_children[pos + 2] = c3;
     }
 
+    
     flag splitRoot() {
         Self *c1 = nullptr, *c2 = nullptr, *c3 = nullptr;
         Entry e1, e2;
 
-        Vector<Entry> tmpKeys;
-        Vector<Self*> tmpChildren;
+        
+        Vector<VectorTrait<Entry>> tmpKeys;
+        Vector<VectorTrait<Self*>> tmpChildren;
         for (size i = 0; i < this->m_keyCount; ++i)
             tmpKeys.push_back(this->m_keys[i]);
         for (size i = 0; i <= this->m_keyCount; ++i)
-            tmpChildren.push_back(child(i));
+            tmpChildren.push_back(child(i), Ref{});
 
         this->clearKeys();
         distributeIntoThree(tmpKeys, tmpChildren, c1, c2, c3, e1, e2);
@@ -171,6 +184,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         return true;
     }
 
+    
     flag tryRedistribute(size& pos) {
         if (child(pos)->isUnderflow()) {
             size nLeft  = pos > 0                  ? child(pos - 1)->m_keyCount : 0;
@@ -189,7 +203,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
                 return false;
             }
         }
-        // Overflow: redistribuye hacia donde haya espacio
+        
         size fl = freeOnLeft(pos), fr = freeOnRight(pos);
         if (!fl && !fr && child(pos)->isFull()) return false;
         if (fl > fr) shiftFromRight(pos); else shiftFromLeft(pos);
@@ -213,18 +227,21 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         return tryRedistribute(pos) || tryRedistributeDouble(pos);
     }
 
+    
     bt_code mergeChildren(size pos) {
         Self *c1 = child(pos - 1), *c2 = child(pos), *c3 = child(pos + 1);
 
-        Vector<Entry> tmpKeys;
-        Vector<Self*> tmpChildren;
+        Vector<VectorTrait<Entry>> tmpKeys;
+        Vector<VectorTrait<Self*>> tmpChildren;
         drain(c1, tmpKeys, tmpChildren); tmpKeys.push_back(this->m_keys[pos - 1]);
         drain(c2, tmpKeys, tmpChildren); tmpKeys.push_back(this->m_keys[pos]);
         drain(c3, tmpKeys, tmpChildren);
 
+        
         c3->m_keyCount = 0;
         delete c3;
 
+        
         size cap = c1->freeCells(), i = 0;
         for (; i < cap; ++i) {
             c1->m_keys[i]     = tmpKeys[i];
@@ -239,6 +256,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         btree_utils::removeAt(this->m_children, pos);
         --this->m_keyCount;
 
+        
         size cap2 = c2->freeCells(), j = ++i;
         for (size k = 0; k < cap2; ++k, ++j) {
             c2->m_keys[k]     = tmpKeys[j];
@@ -251,12 +269,13 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         return this->isUnderflow() ? bt_code::underflow : bt_code::ok;
     }
 
+    
     bt_code mergeRoot() {
         Self *c1 = child(0), *c2 = child(1), *c3 = child(2);
         size total = c1->m_keyCount + c2->m_keyCount + c3->m_keyCount + 2;
 
-        Vector<Entry> tmpKeys;
-        Vector<Self*> tmpChildren;
+        Vector<VectorTrait<Entry>> tmpKeys;
+        Vector<VectorTrait<Self*>> tmpChildren;
         drain(c1, tmpKeys, tmpChildren); tmpKeys.push_back(this->m_keys[0]);
         drain(c2, tmpKeys, tmpChildren); tmpKeys.push_back(this->m_keys[1]);
         drain(c3, tmpKeys, tmpChildren);
@@ -269,6 +288,7 @@ class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
         }
         this->m_children[total] = tmpChildren[total];
 
+        
         c1->m_keyCount = 0; delete c1;
         c2->m_keyCount = 0; delete c2;
         c3->m_keyCount = 0; delete c3;
@@ -281,12 +301,13 @@ public:
 
     ~BTreePage() = default;
 
+    
     bt_code insert(const Value& key, Ref ref) {
         size pos = locate(key);
 
-        if (pos < this->m_keyCount && this->m_keys[pos].m_data == key) {
+        if (pos < this->m_keyCount && this->m_keys[pos] == key) {
             if (this->m_unique) return bt_code::duplicate;
-            this->m_keys[pos].touch();
+            this->m_keys.node(pos).getDataRef().touch();
             return bt_code::ok;
         }
 
@@ -306,20 +327,21 @@ public:
         return this->isOverflow() ? bt_code::overflow : bt_code::ok;
     }
 
+    
     bt_code remove(const Value& key, Value& outKey, Ref& outRef) {
         size pos = locate(key);
         bt_code result = bt_code::ok;
 
-        if (pos < this->m_keyCount && this->m_keys[pos].m_data == key) {
-            outKey = this->m_keys[pos].m_data;
-            outRef = this->m_keys[pos].m_ref;
+        if (pos < this->m_keyCount && this->m_keys[pos] == key) {
+            outKey = this->m_keys[pos];
+            outRef = this->m_keys.node(pos).getRef();
 
             if (this->isLeaf()) {
                 btree_utils::removeAt(this->m_keys, pos);
                 --this->m_keyCount;
                 return this->isUnderflow() ? bt_code::underflow : bt_code::ok;
             }
-            // Swap con el sucesor inorder y elimina desde el hijo derecho
+            
             Entry& successor = child(pos + 1)->leftmostEntry();
             std::swap(this->m_keys[pos], successor);
             Value discard{}; Ref discardRef{};
@@ -339,13 +361,14 @@ public:
         return result;
     }
 
+    
     flag search(const Value& key, Value& outKey, Ref& outRef) {
         size pos = locate(key);
 
-        if (pos < this->m_keyCount && this->m_keys[pos].m_data == key) {
-            outKey = this->m_keys[pos].m_data;
-            outRef = this->m_keys[pos].m_ref;
-            this->m_keys[pos].touch();
+        if (pos < this->m_keyCount && this->m_keys[pos] == key) {
+            outKey = this->m_keys[pos];
+            outRef = this->m_keys.node(pos).getRef();
+            this->m_keys.node(pos).getDataRef().touch();
             return true;
         }
         if (this->m_children[pos])
@@ -353,6 +376,7 @@ public:
         return false;
     }
 
+    
     template <typename Func, typename... Args>
     void forEach(level lv, Func func, Args&&... args) {
         for (size i = 0; i < this->m_keyCount; ++i) {
@@ -364,6 +388,7 @@ public:
             child(this->m_keyCount)->forEach(lv + 1, func, std::forward<Args>(args)...);
     }
 
+    // fisrthat
     template <typename Func, typename... Args>
     Entry* firstThat(level lv, Func func, Args&&... args) {
         for (size i = 0; i < this->m_keyCount; ++i) {
@@ -378,6 +403,7 @@ public:
         return nullptr;
     }
 
+    // foreach
     template <typename Func, typename... Args>
     void forEachPage(level lv, Func func, Args&&... args) {
         func(this->m_keyCount, lv, std::forward<Args>(args)...);

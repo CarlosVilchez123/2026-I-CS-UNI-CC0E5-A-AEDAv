@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 #include <cctype>
-#include "types.h"
+#include "../types.h"
 #include "BTree.h"
 #include "traits.h"
 #include "demo_utils.h"
@@ -16,86 +16,139 @@ static void concurrencyWorker(BT& tree, Ref workerId) {
         tree.insert(TypeBTree('a' + ((workerId * 7 + (Ref)i) % 26)), workerId);
 }
 
-void DemoBTree() {
-
-    printSection("Insertar");
+static BT buildTree() {
     BT bt;
     const std::string keys = "D1XJ2xTg8zKL9AhijOPQcEowRSp0NbW567BUfCqrs4FdtYZakHIuvGV3eMylmn";
     for (size i = 0; i < keys.size(); ++i)
         bt.insert(TypeBTree(keys[i]), Ref(i * i));
-    std::cout << "  size="   << bt.numKeys()
-              << "  height=" << bt.height()
-              << "  order="  << bt.order() << "\n";
+    return bt;
+}
 
-    printSection("search");
+static void demoInsert(std::ostream& os) {
+    os << "\n=== Insert ===\n";
+    BT bt = buildTree();
+    os << "size=" << bt.numKeys()
+       << " | height=" << bt.height()
+       << " | order=" << bt.order() << "\n";
+    os << bt << "\n";
+}
+
+static void demoSearch(std::ostream& os) {
+    os << "\n=== Search ===\n";
+    BT bt = buildTree();
     try {
         auto [val, ref] = bt.search(TypeBTree('Z'));
-        std::cout << "  search('Z') -> encontrado  valor=" << val << "  ref=" << ref << "\n";
+        os << "search('Z') -> valor=" << val << "  ref=" << ref << "\n";
     } catch (const std::runtime_error& e) {
-        std::cout << "  search('Z') -> " << e.what() << "\n";
+        os << "search('Z') -> " << e.what() << "\n";
     }
     try {
         bt.search(TypeBTree('!'));
     } catch (const std::runtime_error& e) {
-        std::cout << "  search('!') -> " << e.what() << "\n";
+        os << "search('!') -> " << e.what() << "\n";
     }
+}
 
-    printSection("forEach variadic");
+static void demoForEach(std::ostream& os) {
+    os << "\n=== ForEach ===\n";
+    BT bt = buildTree();
+    os << "inorder: ";
+    bt.forEach([&os](BT::Entry& e, level /*lv*/) {
+        os << e.m_data << " ";
+    });
+    os << "\n";
     size letterCount = 0;
     bt.forEach([](BT::Entry& e, level /*lv*/, size& count) {
         if (isalpha((unsigned char)e.m_data)) ++count;
     }, letterCount);
-    std::cout << "  letras en el arbol: " << letterCount << "\n";
+    os << "letras: " << letterCount << "\n";
+}
 
-    printSection("firstThat variadic");
-    auto* entry = bt.firstThat([](BT::Entry& e, level /*lv*/, TypeBTree target) -> flag {
+static void demoFirstThat(std::ostream& os) {
+    os << "\n=== FirstThat ===\n";
+    BT bt = buildTree();
+    auto* e = bt.firstThat([](BT::Entry& e, level /*lv*/, TypeBTree target) -> flag {
         return e.m_data == target;
     }, TypeBTree('M'));
-    std::cout << "  firstThat('M') -> " << (entry ? "encontrado" : "no encontrado");
-    if (entry) std::cout << "  ref=" << entry->m_ref;
-    std::cout << "\n";
+    os << "firstThat('M') -> " << (e ? "encontrado" : "no encontrado");
+    if (e) os << "  ref=" << e->m_ref;
+    os << "\n";
+    auto* g = bt.firstThat([](BT::Entry& e, level /*lv*/) -> flag {
+        return e.m_data > TypeBTree('Z');
+    });
+    os << "firstThat(> 'Z') -> " << (g ? "encontrado" : "no encontrado");
+    if (g) os << "  clave=" << g->m_data << "  ref=" << g->m_ref;
+    os << "\n";
+}
 
-    printSection("remove");
-    size beforeRemove = bt.numKeys();
-    auto [removedVal, removedRef] = bt.remove(TypeBTree('A'));
-    std::cout << "  remove('A') -> eliminado: valor=" << removedVal
-              << "  ref="          << removedRef
-              << "  size antes="   << beforeRemove
-              << "  size despues=" << bt.numKeys() << "\n";
+static void demoRemove(std::ostream& os) {
+    os << "\n=== Remove ===\n";
+    BT bt = buildTree();
+    size before = bt.numKeys();
+    auto [val, ref] = bt.remove(TypeBTree('A'));
+    os << "remove('A') -> valor=" << val << "  ref=" << ref
+       << "  antes=" << before << "  despues=" << bt.numKeys() << "\n";
+    try {
+        bt.remove(TypeBTree('!'));
+    } catch (const std::runtime_error& e) {
+        os << "remove('!') -> " << e.what() << "\n";
+    }
+}
 
-    printSection("for (auto& entry : bt) - iterador inorder");
-    std::string inorderKeys;
-    for (auto& e : bt) inorderKeys += e.m_data;
-    std::cout << "  claves en orden: " << inorderKeys << "\n";
+static void demoIterator(std::ostream& os) {
+    os << "\n=== Iterator inorder ===\n";
+    BT bt = buildTree();
+    os << "range-for: ";
+    std::string inorder;
+    for (auto& e : bt) inorder += e.m_data;
+    os << inorder << "\n";
+}
 
-    printSection("useCount() - contador de accesos por clave");
+static void demoUseCount(std::ostream& os) {
+    os << "\n=== UseCount ===\n";
+    BT bt = buildTree();
     bt.search(TypeBTree('B')); bt.search(TypeBTree('B')); bt.search(TypeBTree('B'));
     bt.search(TypeBTree('C'));
     for (auto& e : bt)
         if (e.m_data == TypeBTree('B') || e.m_data == TypeBTree('C'))
-            std::cout << "  '" << e.m_data << "'  useCount=" << e.useCount() << "\n";
-
-    testIO(bt);
-
-    testCopyMove(bt, [](BT& c) { c.insert(TypeBTree('!'), 999); });
-
-    printSection("Concurrencia");
-    BT concurrentTree;
-    const size kThreads          = 5;
-    const size kInsertsPerThread = 200;
-    std::vector<std::thread> threads;
-    threads.reserve(kThreads);
-    for (size i = 0; i < kThreads; ++i)
-        threads.emplace_back(concurrencyWorker, std::ref(concurrentTree), Ref(i + 1));
-    for (auto& t : threads) t.join();
-    std::cout << "  inserciones concurrentes lanzadas: " << (kThreads * kInsertsPerThread) << "\n";
-    std::cout << "  size final (sin corrupcion, <= 26 claves unicas): "
-              << concurrentTree.numKeys() << "\n";
-
-    printFooter("BTREE");
+            os << "'" << e.m_data << "'  useCount=" << e.useCount() << "\n";
 }
 
-int main() {
-    DemoBTree();
-    return 0;
+static void demoIO(std::ostream& os) {
+    os << "\n=== operator<< / operator>> ===\n";
+    BT bt = buildTree();
+    std::ostringstream oss;
+    oss << bt;
+    os << "serializado:   " << oss.str() << "\n";
+    BT bt2;
+    std::istringstream iss(oss.str());
+    iss >> bt2;
+    os << "deserializado: " << bt2 << "\n";
+}
+
+static void demoCopyMove(std::ostream& os) {
+    os << "\n=== Copy / Move ===\n";
+    BT bt = buildTree();
+    BT copia(bt);
+    copia.insert(TypeBTree('!'), 999);
+    os << "original : size=" << bt.numKeys()    << "  " << bt    << "\n";
+    os << "copia    : size=" << copia.numKeys() << "  " << copia << "\n";
+    BT movida(std::move(copia));
+    os << "movida   : size=" << movida.numKeys() << "  " << movida << "\n";
+    os << "fuente tras move: size=" << copia.numKeys() << "\n";
+}
+
+
+void DemoBTree(std::ostream& os) {
+    os << "\n=== BTree Demo ===\n";
+    demoInsert    (os);
+    demoSearch    (os);
+    demoForEach   (os);
+    demoFirstThat (os);
+    demoRemove    (os);
+    demoIterator  (os);
+    demoUseCount  (os);
+    demoIO        (os);
+    demoCopyMove  (os);
+    os << "\n=== Fin BTree Demo ===\n";
 }

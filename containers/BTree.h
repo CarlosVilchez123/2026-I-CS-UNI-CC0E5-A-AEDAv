@@ -4,8 +4,6 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <shared_mutex>
-#include <mutex>
 #include <utility>
 #include "../types.h"
 #include "traits.h"
@@ -15,23 +13,28 @@
 template <typename Trait>
 class BTree {
 public:
-    using value_type             = typename Trait::value_type;
-    using Comp                   = typename Trait::Comp;
-    static constexpr size Order  = Trait::Order;
-
-    using Page  = BTreePage<Trait>;
-    using Entry = typename Page::Entry;
+    using value_type            = typename Trait::value_type;
+    using Comp                  = typename Trait::Comp;
+    static constexpr size Order = Trait::Order;
+    using Page                  = BTreePage<Trait>;
+    using Entry                 = typename Page::Entry;
+    using Result                = KVResult<value_type, Ref>;
 
 private:
-    Page*                    m_root;
-    level                    m_height;
-    flag                     m_unique;
-    size                     m_numKeys;
-    mutable std::shared_mutex m_mtx;
+    struct StackFrame {
+        Page* page; size idx;
+        flag operator==(const StackFrame& o) const { return page == o.page && idx == o.idx; }
+    };
+
+    Page*          m_root;
+    level          m_height;
+    flag           m_unique;
+    size           m_numKeys;
+    mutable SMutex m_mtx;
 
     Page* cloneSubtree(const Page* src) const {
         if (!src) return nullptr;
-        auto* dst = new Page(src->m_maxKeys, src->m_unique);
+        auto* dst           = new Page(src->m_maxKeys, src->m_unique);
         dst->m_childMaxKeys = src->m_childMaxKeys;
         dst->m_keyCount     = src->m_keyCount;
         dst->m_keys         = src->m_keys;
@@ -43,9 +46,7 @@ private:
 public:
     explicit BTree(flag unique = true)
         : m_root(new Page(2 * Order + 1, unique))
-        , m_height(1)
-        , m_unique(unique)
-        , m_numKeys(0)
+        , m_height(1), m_unique(unique), m_numKeys(0)
     {
         m_root->m_childMaxKeys = Order;
     }
@@ -53,7 +54,7 @@ public:
     BTree(const BTree& other)
         : m_root(nullptr), m_height(1), m_unique(true), m_numKeys(0)
     {
-        std::shared_lock lock(other.m_mtx);
+        SLock<> lock(other.m_mtx);
         m_root    = cloneSubtree(other.m_root);
         m_height  = other.m_height;
         m_unique  = other.m_unique;
@@ -62,8 +63,8 @@ public:
 
     BTree& operator=(const BTree& other) {
         if (this == &other) return *this;
-        std::unique_lock lkSelf(m_mtx);
-        std::shared_lock lkOther(other.m_mtx);
+        ULock<> lkSelf(m_mtx);
+        SLock<> lkOther(other.m_mtx);
         delete m_root;
         m_root    = cloneSubtree(other.m_root);
         m_height  = other.m_height;
@@ -75,7 +76,7 @@ public:
     BTree(BTree&& other) noexcept
         : m_root(nullptr), m_height(1), m_unique(true), m_numKeys(0)
     {
-        std::unique_lock lock(other.m_mtx);
+        ULock<> lock(other.m_mtx);
         m_root    = std::exchange(other.m_root,    nullptr);
         m_height  = std::exchange(other.m_height,  1);
         m_unique  = other.m_unique;
@@ -84,8 +85,8 @@ public:
 
     BTree& operator=(BTree&& other) noexcept {
         if (this == &other) return *this;
-        std::unique_lock lkSelf(m_mtx);
-        std::unique_lock lkOther(other.m_mtx);
+        ULock<> lkSelf(m_mtx);
+        ULock<> lkOther(other.m_mtx);
         delete m_root;
         m_root    = std::exchange(other.m_root,    nullptr);
         m_height  = std::exchange(other.m_height,  1);
@@ -97,19 +98,16 @@ public:
     ~BTree() { delete m_root; }
 
     flag insert(const value_type& key, Ref ref = Ref{}) {
-        std::unique_lock lock(m_mtx);
+        ULock<> lock(m_mtx);
         bt_code result = m_root->insert(key, ref);
         if (result == bt_code::duplicate) return false;
         ++m_numKeys;
-        if (result == bt_code::overflow) {
-            m_root->splitRoot();
-            ++m_height;
-        }
+        if (result == bt_code::overflow) { m_root->splitRoot(); ++m_height; }
         return true;
     }
 
-    std::pair<value_type, Ref> remove(const value_type& key) {
-        std::unique_lock lock(m_mtx);
+    Result remove(const value_type& key) {
+        ULock<> lock(m_mtx);
         value_type outKey{}; Ref outRef{};
         bt_code result = m_root->remove(key, outKey, outRef);
         if (result == bt_code::notFound)
@@ -119,45 +117,44 @@ public:
         return {outKey, outRef};
     }
 
-    std::pair<value_type, Ref> search(const value_type& key) const {
-        std::shared_lock lock(m_mtx);
+    Result search(const value_type& key) const {
+        SLock<> lock(m_mtx);
         value_type outKey{}; Ref outRef{};
         if (!m_root->search(key, outKey, outRef))
             throw std::runtime_error("BTree::search - clave no encontrada");
         return {outKey, outRef};
     }
 
-    size  numKeys() const { std::shared_lock l(m_mtx); return m_numKeys; }
-    level height()  const { std::shared_lock l(m_mtx); return m_height;  }
+    size  numKeys() const { SLock<> l(m_mtx); return m_numKeys; }
+    level height()  const { SLock<> l(m_mtx); return m_height;  }
     size  order()   const { return Order; }
-    flag  empty()   const { std::shared_lock l(m_mtx); return m_numKeys == 0; }
+    flag  empty()   const { SLock<> l(m_mtx); return m_numKeys == 0; }
 
     template <typename Func, typename... Args>
     void forEach(Func func, Args&&... args) {
-        std::shared_lock lock(m_mtx);
+        SLock<> lock(m_mtx);
         m_root->forEach(0, func, std::forward<Args>(args)...);
     }
 
     template <typename Func, typename... Args>
     Entry* firstThat(Func func, Args&&... args) {
-        std::shared_lock lock(m_mtx);
+        SLock<> lock(m_mtx);
         return m_root->firstThat(0, func, std::forward<Args>(args)...);
     }
 
     template <typename Func, typename... Args>
     void forEachPage(Func func, Args&&... args) {
-        std::shared_lock lock(m_mtx);
+        SLock<> lock(m_mtx);
         m_root->forEachPage(0, func, std::forward<Args>(args)...);
     }
 
-
     class Iterator {
-        Vector<std::pair<Page*, size>> m_stack;
-        const BTree* m_owner;
+        Vector<VectorTrait<StackFrame>> m_stack;
+        const BTree*       m_owner;
 
         void descendLeft(Page* node, size idx) {
             while (node && node->m_keyCount > 0) {
-                m_stack.push_back(std::make_pair(node, idx));
+                m_stack.push_back({node, idx});
                 node = node->m_children[idx];
                 idx  = 0;
             }
@@ -166,29 +163,24 @@ public:
     public:
         Iterator() : m_owner(nullptr) {}
 
-        explicit Iterator(Page* root, const BTree* owner)
-            : m_owner(owner)
-        {
+        explicit Iterator(Page* root, const BTree* owner) : m_owner(owner) {
             if (root) descendLeft(root, 0);
         }
 
         Entry& operator*() const {
-            auto& [page, idx] = m_stack.back();
-            return page->m_keys[idx];
+            auto& f = m_stack.back();
+            return f.page->m_keys.node(f.idx).getDataRef();
         }
 
         Entry* operator->() const { return &operator*(); }
 
         Iterator& operator++() {
-            auto [page, idx] = m_stack.back();
+            auto f = m_stack.back();
             m_stack.pop_back();
-
-            if (idx + 1 < page->m_keyCount)
-                m_stack.push_back(std::make_pair(page, idx + 1));
-
-            Page* rightChild = page->m_children[idx + 1];
-            if (rightChild) descendLeft(rightChild, 0);
-
+            if (f.idx + 1 < f.page->m_keyCount)
+                m_stack.push_back(StackFrame{f.page, f.idx + 1});
+            Page* right = f.page->m_children.node(f.idx + 1).getDataRef();
+            if (right) descendLeft(right, 0);
             return *this;
         }
 
@@ -196,11 +188,8 @@ public:
         flag operator!=(const Iterator& o) const { return !(*this == o); }
     };
 
-    Iterator begin() const {
-        std::shared_lock lock(m_mtx);
-        return Iterator(m_root, this);
-    }
-    Iterator end() const { return Iterator(); }
+    Iterator begin() const { SLock<> l(m_mtx); return Iterator(m_root, this); }
+    Iterator end()   const { return Iterator(); }
 
     std::string toString() const {
         std::ostringstream oss;
