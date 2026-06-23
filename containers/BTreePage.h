@@ -10,7 +10,6 @@
 
 template <typename Trait> class BTree;
 
-
 template <typename Trait>
 class BTreePage : public BTreeNode<Trait, BTreePage<Trait>> {
     friend class BTree<Trait>;

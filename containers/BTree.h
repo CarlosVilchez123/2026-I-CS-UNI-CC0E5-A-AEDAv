@@ -1,8 +1,6 @@
 #ifndef __BTREE_H__
 #define __BTREE_H__
 
-#include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include "../types.h"
@@ -21,11 +19,6 @@ public:
     using Result                = KVResult<value_type, Ref>;
 
 private:
-    struct StackFrame {
-        Page* page; size idx;
-        flag operator==(const StackFrame& o) const { return page == o.page && idx == o.idx; }
-    };
-
     Page*          m_root;
     level          m_height;
     flag           m_unique;
@@ -149,12 +142,12 @@ public:
     }
 
     class Iterator {
-        Vector<VectorTrait<StackFrame>> m_stack;
+        Vector<VectorTrait<Page*>> m_stack;
         const BTree*       m_owner;
 
         void descendLeft(Page* node, size idx) {
             while (node && node->m_keyCount > 0) {
-                m_stack.push_back({node, idx});
+                m_stack.push_back(node, static_cast<Ref>(idx));
                 node = node->m_children[idx];
                 idx  = 0;
             }
@@ -168,18 +161,20 @@ public:
         }
 
         Entry& operator*() const {
-            auto& f = m_stack.back();
-            return f.page->m_keys.node(f.idx).getDataRef();
+            Page* page = m_stack.back();
+            size  idx  = asSize(m_stack.backNode().getRef());
+            return page->m_keys.node(idx).getDataRef();
         }
 
         Entry* operator->() const { return &operator*(); }
 
         Iterator& operator++() {
-            auto f = m_stack.back();
+            Page* page = m_stack.back();
+            size  idx  = asSize(m_stack.backNode().getRef());
             m_stack.pop_back();
-            if (f.idx + 1 < f.page->m_keyCount)
-                m_stack.push_back(StackFrame{f.page, f.idx + 1});
-            Page* right = f.page->m_children.node(f.idx + 1).getDataRef();
+            if (idx + 1 < page->m_keyCount)
+                m_stack.push_back(page, static_cast<Ref>(idx + 1));
+            Page* right = page->m_children.node(idx + 1).getDataRef();
             if (right) descendLeft(right, 0);
             return *this;
         }
@@ -191,8 +186,8 @@ public:
     Iterator begin() const { SLock<> l(m_mtx); return Iterator(m_root, this); }
     Iterator end()   const { return Iterator(); }
 
-    std::string toString() const {
-        std::ostringstream oss;
+    String toString() const {
+        OSStream oss;
         oss << "[";
         flag first = true;
         for (const auto& e : *this) {
@@ -204,11 +199,11 @@ public:
         return oss.str();
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const BTree& t) {
+    friend OStream& operator<<(OStream& os, const BTree& t) {
         return os << t.toString();
     }
 
-    friend std::istream& operator>>(std::istream& is, BTree& t) {
+    friend IStream& operator>>(IStream& is, BTree& t) {
         char ch{};
         if (!(is >> ch) || ch != '[') { is.setstate(std::ios_base::failbit); return is; }
         Entry e; char paren{};

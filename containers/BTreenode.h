@@ -1,7 +1,6 @@
 #ifndef __BTREE_NODE_H__
 #define __BTREE_NODE_H__
 
-#include <iostream>
 #include "Vector.h"
 #include "../types.h"
 #include "traits.h"
@@ -38,10 +37,10 @@ struct BTreeEntry {
     flag operator> (const BTreeEntry& o) const { return m_data >  o.m_data; }
     flag operator==(const BTreeEntry& o) const { return m_data == o.m_data; }
 
-    friend std::ostream& operator<<(std::ostream& os, const BTreeEntry& e) {
+    friend OStream& operator<<(OStream& os, const BTreeEntry& e) {
         return os << e.m_data << ":" << e.m_ref;
     }
-    friend std::istream& operator>>(std::istream& is, BTreeEntry& e) {
+    friend IStream& operator>>(IStream& is, BTreeEntry& e) {
         char sep{};
         return is >> e.m_data >> sep >> e.m_ref;
     }
@@ -54,7 +53,7 @@ struct BTreeNode {
     using Child      = _Child;                   
 
     Vector<VectorTrait<Entry>>   m_keys;
-    Vector<VectorTrait<Child*>>  m_children;
+    Vector<VectorTrait<Child*>>  m_children;             
     size                 m_keyCount;
     size                 m_maxKeys;
     size                 m_childMaxKeys;

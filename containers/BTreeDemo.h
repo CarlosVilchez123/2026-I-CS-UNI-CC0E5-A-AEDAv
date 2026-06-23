@@ -1,30 +1,23 @@
-#include <iostream>
-#include <sstream>
 #include <thread>
 #include <vector>
 #include <cctype>
 #include "../types.h"
 #include "BTree.h"
 #include "traits.h"
-#include "demo_utils.h"
+#include "util.h"
 
 using Trait = BTreeOrden3<TypeBTree>;
 using BT    = BTree<Trait>;
 
-static void concurrencyWorker(BT& tree, Ref workerId) {
-    for (size i = 0; i < 200; ++i)
-        tree.insert(TypeBTree('a' + ((workerId * 7 + (Ref)i) % 26)), workerId);
-}
-
 static BT buildTree() {
     BT bt;
-    const std::string keys = "D1XJ2xTg8zKL9AhijOPQcEowRSp0NbW567BUfCqrs4FdtYZakHIuvGV3eMylmn";
+    const String keys = "D1XJ2xTg8zKL9AhijOPQcEowRSp0NbW567BUfCqrs4FdtYZakHIuvGV3eMylmn";
     for (size i = 0; i < keys.size(); ++i)
         bt.insert(TypeBTree(keys[i]), Ref(i * i));
     return bt;
 }
 
-static void demoInsert(std::ostream& os) {
+static void demoInsert(OStream& os) {
     os << "\n=== Insert ===\n";
     BT bt = buildTree();
     os << "size=" << bt.numKeys()
@@ -33,7 +26,7 @@ static void demoInsert(std::ostream& os) {
     os << bt << "\n";
 }
 
-static void demoSearch(std::ostream& os) {
+static void demoSearch(OStream& os) {
     os << "\n=== Search ===\n";
     BT bt = buildTree();
     try {
@@ -49,7 +42,7 @@ static void demoSearch(std::ostream& os) {
     }
 }
 
-static void demoForEach(std::ostream& os) {
+static void demoForEach(OStream& os) {
     os << "\n=== ForEach ===\n";
     BT bt = buildTree();
     os << "inorder: ";
@@ -64,7 +57,7 @@ static void demoForEach(std::ostream& os) {
     os << "letras: " << letterCount << "\n";
 }
 
-static void demoFirstThat(std::ostream& os) {
+static void demoFirstThat(OStream& os) {
     os << "\n=== FirstThat ===\n";
     BT bt = buildTree();
     auto* e = bt.firstThat([](BT::Entry& e, level /*lv*/, TypeBTree target) -> flag {
@@ -81,7 +74,7 @@ static void demoFirstThat(std::ostream& os) {
     os << "\n";
 }
 
-static void demoRemove(std::ostream& os) {
+static void demoRemove(OStream& os) {
     os << "\n=== Remove ===\n";
     BT bt = buildTree();
     size before = bt.numKeys();
@@ -95,16 +88,16 @@ static void demoRemove(std::ostream& os) {
     }
 }
 
-static void demoIterator(std::ostream& os) {
+static void demoIterator(OStream& os) {
     os << "\n=== Iterator inorder ===\n";
     BT bt = buildTree();
     os << "range-for: ";
-    std::string inorder;
+    String inorder;
     for (auto& e : bt) inorder += e.m_data;
     os << inorder << "\n";
 }
 
-static void demoUseCount(std::ostream& os) {
+static void demoUseCount(OStream& os) {
     os << "\n=== UseCount ===\n";
     BT bt = buildTree();
     bt.search(TypeBTree('B')); bt.search(TypeBTree('B')); bt.search(TypeBTree('B'));
@@ -114,19 +107,19 @@ static void demoUseCount(std::ostream& os) {
             os << "'" << e.m_data << "'  useCount=" << e.useCount() << "\n";
 }
 
-static void demoIO(std::ostream& os) {
+static void demoIO(OStream& os) {
     os << "\n=== operator<< / operator>> ===\n";
     BT bt = buildTree();
-    std::ostringstream oss;
+    OSStream oss;
     oss << bt;
     os << "serializado:   " << oss.str() << "\n";
     BT bt2;
-    std::istringstream iss(oss.str());
+    ISStream iss(oss.str());
     iss >> bt2;
     os << "deserializado: " << bt2 << "\n";
 }
 
-static void demoCopyMove(std::ostream& os) {
+static void demoCopyMove(OStream& os) {
     os << "\n=== Copy / Move ===\n";
     BT bt = buildTree();
     BT copia(bt);
@@ -138,17 +131,16 @@ static void demoCopyMove(std::ostream& os) {
     os << "fuente tras move: size=" << copia.numKeys() << "\n";
 }
 
-
-void DemoBTree(std::ostream& os) {
+void DemoBTree(OStream& os) {
     os << "\n=== BTree Demo ===\n";
-    demoInsert    (os);
-    demoSearch    (os);
-    demoForEach   (os);
-    demoFirstThat (os);
-    demoRemove    (os);
-    demoIterator  (os);
-    demoUseCount  (os);
-    demoIO        (os);
-    demoCopyMove  (os);
+    demoInsert     (os);
+    demoSearch     (os);
+    demoForEach    (os);
+    demoFirstThat  (os);
+    demoRemove     (os);
+    demoIterator   (os);
+    demoUseCount   (os);
+    demoIO         (os);
+    demoCopyMove   (os);
     os << "\n=== Fin BTree Demo ===\n";
 }
