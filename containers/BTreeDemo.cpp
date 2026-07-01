@@ -119,8 +119,8 @@ void DemoOperators(BTree<BTreeTrait<TypeBTree, Ref>>& bt)
     btDesdeString.ForEach   (bt_fwd, [&](tagObjectInfo<BTreeTrait<TypeBTree,Ref>>& info, int){ reconstruidoString << info.key << ":" << info.ObjID << " "; });
     btDesdeArchivo.ForEach  (bt_fwd, [&](tagObjectInfo<BTreeTrait<TypeBTree,Ref>>& info, int){ reconstruidoArchivo<< info.key << ":" << info.ObjID << " "; });
 
-    bool igualString  = (original.str() == reconstruidoString.str());
-    bool igualArchivo = (original.str() == reconstruidoArchivo.str());
+    b igualString  = (original.str() == reconstruidoString.str());
+    b igualArchivo = (original.str() == reconstruidoArchivo.str());
     cout << "stringstream == original ? " << (igualString  ? "SI" : "NO") << endl;
     cout << "archivo      == original ? " << (igualArchivo ? "SI" : "NO") << endl;
 }

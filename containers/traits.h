@@ -36,4 +36,5 @@ template <typename keyType, typename ObjIDType = long>
 struct DescendingBTreeTrait : public BaseBTreeTrait<keyType, ObjIDType, greater<keyType>>
 {};
 
+//// arreglar el commit
 #endif // __TRAITS_H__

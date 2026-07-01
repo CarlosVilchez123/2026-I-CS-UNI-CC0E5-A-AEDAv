@@ -152,6 +152,7 @@ ostream& operator<<(ostream &os, BTree<Trait> &bt)
        return os;
 }
 
+//Operators
 template <typename Trait>
 istream& operator>>(istream &is, BTree<Trait> &bt) 
 {

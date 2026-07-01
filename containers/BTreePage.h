@@ -576,6 +576,8 @@ typename CBTreePage<Trait>::ObjectInfo * CBTreePage<Trait>::FirstThat(Func func,
        return 0;
 }*/
 
+
+//unificacion de los buclhez de foreach y firsthat
 template <typename Trait>
 template <typename Func, typename... Args>
 typename CBTreePage<Trait>::ObjectInfo * CBTreePage<Trait>::MismoBucle(bt_IterDir dir, Func func, int level, Args&&... args)   //AGREGADO
