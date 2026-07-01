@@ -15,4 +15,5 @@ using T1 = int;
 using Ref = long;
 using TypeBTree = char;
 
+using b = bool;
 #endif // __TYPES_H__

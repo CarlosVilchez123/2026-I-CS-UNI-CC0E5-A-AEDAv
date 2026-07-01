@@ -10,12 +10,14 @@
 #include <vector>
 #include <iostream>
 #include <assert.h>
+#include <type_traits>
 #include <utility>
 
 template <typename Trait> class BTree;
 
 using namespace std;
 enum bt_ErrorCode {bt_ok, bt_overflow, bt_underflow, bt_duplicate, bt_nofound, bt_rootmerged};
+enum bt_IterDir {bt_fwd, bt_bwd};
 
 /*template <typename keyType>
 bool operator>=(const _ObjectInfo<keyType>& object1, const _ObjectInfo<keyType>& object2)
@@ -24,6 +26,18 @@ bool operator>=(const _ObjectInfo<keyType>& object1, const _ObjectInfo<keyType>&
 template <typename keyType>
 bool operator<=(const _ObjectInfo<keyType>& object1, const _ObjectInfo<keyType>& object2)
 { return object1.key <= object2.key;    }*/
+
+template <typename Func>
+struct ForEachAdaptor
+{
+       Func func;
+       template <typename ObjInfo, typename... Args>
+       bool operator()(ObjInfo& info, int level, Args&&... args)
+       {
+               func(info, level, std::forward<Args>(args)...);
+               return false; // ForEach jamas se detiene
+       }
+};
 
 template <typename Trait>
 struct tagObjectInfo
@@ -60,10 +74,19 @@ class CBTreePage
        bt_ErrorCode    Remove (const typename Trait::keyType &key, const typename Trait::ObjIDType ObjID);
        bool            Search (const typename Trait::keyType &key, long &ObjID);
        void            Print  (ostream &os);   
+       
        template <typename Func, typename... Args>
-       void            ForEach(Func func, int level, Args&&... args);
+       void            ForEach(bt_IterDir dir, Func func, int level, Args&&... args)
+       {       MismoBucle(dir, ForEachAdaptor<Func>{func}, level, std::forward<Args>(args)...);  }
+
        template <typename Func, typename... Args>
-       ObjectInfo* FirstThat(Func func, int level, Args&&... args);
+       ObjectInfo*     FirstThat(bt_IterDir dir, Func func, int level, Args&&... args)
+       {       return MismoBucle(dir, func, level, std::forward<Args>(args)...); }
+
+       //template <typename Func, typename... Args>
+       //void            ForEach(Func func, int level, Args&&... args);
+       //template <typename Func, typename... Args>
+       //ObjectInfo* FirstThat(Func func, int level, Args&&... args);
 
 protected:
        int  m_MinKeys; // minimum number of keys in a node
@@ -92,6 +115,9 @@ protected:
        void  SplitChild (int pos);
 
        ObjectInfo &GetFirstObjectInfo();
+
+       template <typename Func, typename... Args>
+       ObjectInfo* MismoBucle(bt_IterDir dir, Func func, int level, Args&&... args);
 
        bool Overflow()  { return m_KeyCount > m_MaxKeys; }
        bool Underflow() { return m_KeyCount < MinNumberOfKeys(); }
@@ -512,7 +538,7 @@ void CBTreePage<keyType, ObjIDType>::ForEachReverse(lpfnForEach2 lpfn, int level
 }*/
 
 // For each implementacion
-template <typename Trait>
+/*template <typename Trait>
 template <typename Func, typename... Args>
 void CBTreePage<Trait>::ForEach(Func func, int level, Args&&... args)
 {
@@ -546,6 +572,42 @@ typename CBTreePage<Trait>::ObjectInfo * CBTreePage<Trait>::FirstThat(Func func,
                 pTmp = m_SubPages[m_KeyCount]->FirstThat(func, level+1, std::forward<Args>(args)...);
                if( pTmp )
                return pTmp;
+       }
+       return 0;
+}*/
+
+template <typename Trait>
+template <typename Func, typename... Args>
+typename CBTreePage<Trait>::ObjectInfo * CBTreePage<Trait>::MismoBucle(bt_IterDir dir, Func func, int level, Args&&... args)   //AGREGADO
+{
+       const int n = m_KeyCount;
+       ObjectInfo *pTmp;
+
+       for( int s = 0 ; s < n ; s++ )
+       {
+               // indice de la clave a visitar en este paso
+               int i = ( dir == bt_fwd ) ?     s     : n - 1 - s;
+               // hijo que se visita ANTES de esa clave (izq. en forward, der. en backward)
+               int c = ( dir == bt_fwd ) ?     i     : i + 1;
+
+               if( m_SubPages[c] )
+               {
+                       pTmp = m_SubPages[c]->MismoBucle(dir, func, level+1, std::forward<Args>(args)...);
+                       if( pTmp )
+                               return pTmp;
+               }
+
+               if( func(m_Keys[i], level, std::forward<Args>(args)...) )
+                       return &m_Keys[i];
+       }
+
+       // ultimo hijo: child[n] en forward, child[0] en backward
+       int last = ( dir == bt_fwd ) ? n : 0;
+       if( m_SubPages[last] )
+       {
+               pTmp = m_SubPages[last]->MismoBucle(dir, func, level+1, std::forward<Args>(args)...);
+               if( pTmp )
+                       return pTmp;
        }
        return 0;
 }
@@ -722,7 +784,8 @@ void PrintNodeHelper(tagObjectInfo<Trait> &info, int level, ostream *pExtra)
 template <typename Trait>
 void CBTreePage<Trait>::Print(ostream & os)
 {
-       ForEach(PrintNodeHelper<Trait>, 0, &os);
+        ForEach(bt_fwd, PrintNodeHelper<Trait>, 0, &os);
+       //ForEach(PrintNodeHelper<Trait>, 0, &os);
 }
 
 template <typename Trait>

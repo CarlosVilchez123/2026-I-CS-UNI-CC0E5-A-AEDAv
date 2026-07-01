@@ -46,10 +46,17 @@ public:
        long            GetOrder() { return m_Order;     }
 
        void            Print (ostream &os);
+
+       template <typename Func, typename... Args>
+       void            ForEach( bt_IterDir dir, Func func, Args&&... args );
+
+       template <typename Func, typename... Args>
+       ObjectInfo*     FirstThat( bt_IterDir dir, Func func, Args&&... args );
+       /*
        template <typename Func, typename... Args>
        void            ForEach( Func func, Args&&... args );
        template <typename Func, typename... Args>
-       ObjectInfo*     FirstThat( Func func, Args&&... args );
+       ObjectInfo*     FirstThat( Func func, Args&&... args );*/
        //typedef               ObjectInfo iterator;
 
 protected:
@@ -115,16 +122,70 @@ typename Trait::ObjIDType BTree<Trait>::Search (const typename Trait::keyType ke
 
 template <typename Trait>
 template <typename Func, typename... Args>
-void BTree<Trait>::ForEach(Func func, Args&&... args)
+void BTree<Trait>::ForEach(bt_IterDir dir, Func func, Args&&... args)
 {
-       m_Root.ForEach(func, 0, std::forward<Args>(args)...);
+       m_Root.ForEach(dir, func, 0, std::forward<Args>(args)...);
 }
 
 template <typename Trait>
 template <typename Func, typename... Args>
-typename BTree<Trait>::ObjectInfo * BTree<Trait>::FirstThat(Func func, Args&&... args)
+typename BTree<Trait>::ObjectInfo * BTree<Trait>::FirstThat(bt_IterDir dir, Func func, Args&&... args)   //AGREGADO
 {
-       return m_Root.FirstThat(func, 0, std::forward<Args>(args)...);
+       return m_Root.FirstThat(dir, func, 0, std::forward<Args>(args)...);
+}
+
+//operator << >>
+template <typename Trait>
+ostream& operator<<(ostream &os, BTree<Trait> &bt) 
+{
+       using ObjectInfo = typename BTree<Trait>::ObjectInfo;
+       bool first = true;
+       os << "{";
+       bt.ForEach(bt_fwd, [&](ObjectInfo &info, int level)
+       {
+               if( !first )
+                       os << ",";
+               os << info.key << ":" << info.ObjID;
+               first = false;
+       });
+       os << "}";
+       return os;
+}
+
+template <typename Trait>
+istream& operator>>(istream &is, BTree<Trait> &bt) 
+{
+       char ch;
+       is >> ch;               // se espera '{'
+       if( ch != '{' )
+       {
+               is.setstate(ios::failbit);
+               return is;
+       }
+
+       is >> ws;
+       if( is.peek() == '}' )  // arbol vacio: "{}"
+       {
+               is.get();
+               return is;
+       }
+
+       typename Trait::keyType   key;
+       typename Trait::ObjIDType ObjID;
+
+       while( true )
+       {
+               is >> key;      // lee la clave
+               is >> ch;       // se espera ':'
+               is >> ObjID;    // lee el ObjID
+
+               bt.Insert(key, ObjID);
+
+               is >> ch;       // se espera ',' o '}'
+               if( ch == '}' )
+                       break;
+       }
+       return is;
 }
 
 template <typename Trait>
