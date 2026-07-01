@@ -1,6 +1,10 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 #include <ostream>
+#include <functional>
+#include <type_traits>
+#include <utility>
+
 using namespace std;
 
 template <typename Container>
@@ -30,4 +34,14 @@ void ForEach(Container& container, Func func, Args&&... args){
     ForEach(container.begin(), container.end(),
             func, forward<Args>(args)...);
 }
+
+template <typename Callable, typename... Args>
+decltype(auto) call(Callable func, Args&&... args)
+{
+       if constexpr (std::is_void_v<std::invoke_result_t<Callable, Args...>>)
+               std::invoke(std::forward<Callable>(func), std::forward<Args>(args)...); // void: solo invoca
+       else
+               return std::invoke(std::forward<Callable>(func), std::forward<Args>(args)...); // valor: lo devuelve
+}
+
 #endif

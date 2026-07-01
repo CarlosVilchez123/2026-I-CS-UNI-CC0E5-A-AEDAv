@@ -1,6 +1,6 @@
 #ifndef __TRAITS_H__
 #define __TRAITS_H__
-#include <functional> // para less y greater
+#include <functional> 
 
 template <typename _Node, typename _Comp>
 struct BaseTrait{
@@ -10,31 +10,32 @@ struct BaseTrait{
 };
 
 template <typename _Node>
-struct AscendingTrait : public BaseTrait<_Node, less<typename _Node::value_type>>{
+struct AscendingTrait : public BaseTrait<_Node, std::less<typename _Node::value_type>>{
 };
 template <typename _Node>
-struct DescendingTrait : public BaseTrait<_Node, greater<typename _Node::value_type>>{
+struct DescendingTrait : public BaseTrait<_Node, std::greater<typename _Node::value_type>>{
 };
 
-template <typename _Key, typename _ObjID = long>
+template <typename Trait> struct tagObjectInfo;
+
+template <typename _Key, typename _ObjID = long, typename _Comp = std::less<_Key>>
 struct BTreeTrait {
-    using keyType = _Key;
+    using keyType   = _Key;
     using ObjIDType = _ObjID;
+    using Comp      = _Comp;
+    using Entry     = tagObjectInfo<BTreeTrait<_Key, _ObjID, _Comp>>;
 };
 
 template <typename keyType, typename ObjIDType, typename Comp>
-struct BaseBTreeTrait : public BTreeTrait<keyType, ObjIDType>
-{
-    using Comparator = Comp;
-};
-
-template <typename keyType, typename ObjIDType = long>
-struct AscendingBTreeTrait : public BaseBTreeTrait<keyType, ObjIDType, less<keyType>>
+struct BaseBTreeTrait : public BTreeTrait<keyType, ObjIDType, Comp>
 {};
 
 template <typename keyType, typename ObjIDType = long>
-struct DescendingBTreeTrait : public BaseBTreeTrait<keyType, ObjIDType, greater<keyType>>
+struct AscendingBTreeTrait : public BaseBTreeTrait<keyType, ObjIDType, std::less<keyType>>
 {};
 
-//// arreglar el commit
+template <typename keyType, typename ObjIDType = long>
+struct DescendingBTreeTrait : public BaseBTreeTrait<keyType, ObjIDType, std::greater<keyType>>
+{};
+
 #endif // __TRAITS_H__
