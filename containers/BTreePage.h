@@ -17,7 +17,7 @@
 
 template <typename Trait> class BTree;
 template <typename TreeType> class general_iterator_base;
-template <typename TreeType, bool IsForward> class general_iterator;
+template <typename TreeType, T2 IsForward> class general_iterator;
 
 using namespace std;
 enum bt_ErrorCode {bt_ok, bt_overflow, bt_underflow, bt_duplicate, bt_nofound, bt_rootmerged};
@@ -79,7 +79,7 @@ class CBTreePage
        typedef tagObjectInfo<Trait> ObjectInfo;
 
  public:
-       CBTreePage(T1 maxKeys, bool unique = true);
+       CBTreePage(T1 maxKeys, T2 unique = true);
        virtual ~CBTreePage();
 
        bt_ErrorCode    Insert (const typename Trait::keyType &key, const typename Trait::ObjIDType ObjID);
@@ -106,17 +106,17 @@ protected:
        void  Destroy () {   Reset(); delete this;}
        void  clear ();
 
-       T2  Redistribute1   (int &pos);
-       T2  Redistribute2   (int pos);
-       void  RedistributeR2L (int pos);
-       void  RedistributeL2R (int pos);
+       T2  Redistribute1   (T1 &pos);
+       T2  Redistribute2   (T1 pos);
+       void  RedistributeR2L (T1 pos);
+       void  RedistributeL2R (T1 pos);
 
-       bool    TreatUnderflow  (int &pos)
+       T2    TreatUnderflow  (T1 &pos)
        {       return Redistribute1(pos) || Redistribute2(pos);}
 
-       bt_ErrorCode    Merge  (int pos);
+       bt_ErrorCode    Merge  (T1 pos);
        bt_ErrorCode    MergeRoot ();
-       void  SplitChild (int pos);
+       void  SplitChild (T1 pos);
 
        ObjectInfo &GetFirstObjectInfo();
 
@@ -128,7 +128,7 @@ protected:
        T1& NumberOfKeys()  { return m_KeyCount; }
        T1  GetNumberOfKeys()  { return m_KeyCount; }
        T2 IsRoot()  { return m_MaxKeysForChilds != m_MaxKeys; }
-       void SetMaxKeysForChilds(int orderforchilds)
+       void SetMaxKeysForChilds(T1 orderforchilds)
        {
                m_MaxKeysForChilds = orderforchilds;
        }
@@ -178,17 +178,17 @@ T1 binary_search(Container& container, T1 first, T1 last, ObjType &object, Comp 
 }
 
 template <typename Container, typename ObjType>
-void insert_at(Container& container, const ObjType &object, int pos)
+void insert_at(Container& container, const ObjType &object, T1 pos)
 {
-       int size = container.size();
-       for(int i = size-2 ; i >= pos ; i--)
+       T1 size = container.size();
+       for(T1 i = size-2 ; i >= pos ; i--)
                container[i+1] = container[i];
        container[pos] =  object;
          
 }
 
 template <typename Container>
-void remove(Container& container, int pos)
+void remove(Container& container, T1 pos)
 {
        T1 size = container.size();
        for(T1 i = pos+1 ; i < size ; i++)
@@ -196,7 +196,7 @@ void remove(Container& container, int pos)
 }
 
 template <typename Trait>
-CBTreePage<Trait>::CBTreePage(T1 maxKeys, bool unique)
+CBTreePage<Trait>::CBTreePage(T1 maxKeys, T2 unique)
                                        : m_MaxKeys(maxKeys), m_Unique(unique), m_KeyCount(0)
 {
        Create();
@@ -279,7 +279,7 @@ T2 CBTreePage<Trait>::Redistribute1(T1 &pos)
        }
        else // it is due to overflow
        {
-               int fcol = GetFreeCellsOnLeft(pos),   // Free Cells On Left
+               T1 fcol = GetFreeCellsOnLeft(pos),   // Free Cells On Left
                    fcor = GetFreeCellsOnRight(pos);  // Free Cells On Right
 
                if( !fcol && !fcor && m_SubPages[pos]->IsFull() )
@@ -513,7 +513,7 @@ T2 CBTreePage<Trait>::SplitRoot()
 template <typename Trait>
 T2 CBTreePage<Trait>::Search(const typename Trait::keyType &key, Ref &ObjID)
 {
-       int pos = binary_search(m_Keys, 0, m_KeyCount, key);
+       T1 pos = binary_search(m_Keys, 0, m_KeyCount, key);
        if( pos >= m_KeyCount ){
                if( m_SubPages[pos] )
                        return m_SubPages[pos]->Search(key, ObjID);
