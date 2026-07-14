@@ -123,7 +123,7 @@ void DemoSerializacion() {
 
     std::cout << "g2 node_count=" << g2.node_count() << " edge_count=" << g2.edge_count() << "\n";
 
-    bool ok = (g2.node_count() == g1.node_count()) && (g2.edge_count() == g1.edge_count());
+    T3 ok = (g2.node_count() == g1.node_count()) && (g2.edge_count() == g1.edge_count());
     if (auto* n = g2.find_node(2)) {
         ok = ok && (n->data() == 20);
     } else {
